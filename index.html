@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1622">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Yggdrasil Defense</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg:#0b1622; --panel:rgba(14,26,38,.94); --panel2:rgba(20,36,52,.9);
+    --line:rgba(120,180,220,.16); --acc:#4ade80; --gold:#fbbf24; --red:#ff5a52;
+    --blue:#5aa9ff; --ink:#eaf2f7; --muted:rgba(215,230,240,.6);
+    --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-user-select:none; user-select:none; touch-action:none;}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;}
+  #game{position:fixed;inset:0;display:block;}
+  .hidden{display:none !important;}
+
+  /* ===== Top HUD ===== */
+  #topbar{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;gap:8px;
+    padding:calc(8px + var(--safe-t)) 10px 8px;justify-content:center;pointer-events:none;}
+  .stat{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:7px 11px;display:flex;align-items:center;gap:7px;min-width:64px;justify-content:center;
+    box-shadow:0 6px 20px rgba(0,0,0,.35);backdrop-filter:blur(8px);}
+  .stat .ico{font-size:15px;line-height:1}
+  .stat .val{font-weight:800;font-size:15px;font-variant-numeric:tabular-nums}
+  .stat small{display:block;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-top:1px}
+  .stat.gold .val{color:var(--gold)} .stat.life .val{color:var(--red)} .stat.wave .val{color:var(--blue)}
+
+  /* ===== Bottom HUD ===== */
+  #bottombar{position:fixed;left:0;right:0;bottom:0;z-index:20;
+    padding:8px 8px calc(8px + var(--safe-b));background:linear-gradient(180deg,transparent,rgba(6,12,18,.55) 22%);}
+  #towerRow{display:flex;gap:7px;overflow-x:auto;padding:3px 2px;scrollbar-width:none;justify-content:center;}
+  #towerRow::-webkit-scrollbar{display:none}
+  .twr{pointer-events:auto;flex:0 0 auto;width:74px;background:var(--panel);border:1px solid var(--line);
+    border-radius:16px;padding:8px 6px;text-align:center;transition:transform .08s,border-color .12s,background .12s;}
+  .twr:active{transform:scale(.95)}
+  .twr.sel{border-color:var(--acc);background:linear-gradient(180deg,rgba(74,222,128,.18),rgba(74,222,128,.05))}
+  .twr.locked{opacity:.4}
+  .twr .em{font-size:22px;line-height:1}
+  .twr .nm{font-size:10px;font-weight:800;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .twr .cost{font-size:11px;font-weight:800;color:var(--gold);margin-top:2px}
+  .twr .cost.na{color:var(--red)}
+
+  #actionRow{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:8px}
+  .btn{pointer-events:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border-radius:999px;padding:11px 18px;font-weight:800;font-size:14px;display:flex;align-items:center;gap:7px;
+    box-shadow:0 6px 18px rgba(0,0,0,.3);transition:transform .08s,filter .1s}
+  .btn:active{transform:scale(.96)}
+  .btn.primary{background:linear-gradient(180deg,#2f9e5a,#1f7a45);border-color:#4ade80;color:#eafff0}
+  .btn.danger{color:#ffd7d4;border-color:rgba(255,90,82,.5)}
+  .btn:disabled{opacity:.45}
+
+  /* ===== Tower inspector sheet ===== */
+  #sheet{position:fixed;left:8px;right:8px;bottom:calc(150px + var(--safe-b));z-index:25;
+    background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:14px;
+    box-shadow:0 12px 40px rgba(0,0,0,.5);backdrop-filter:blur(10px);max-width:440px;margin:0 auto;
+    transform:translateY(12px);opacity:0;transition:.18s;pointer-events:none}
+  #sheet.show{transform:none;opacity:1;pointer-events:auto}
+  #sheet .sh-top{display:flex;align-items:center;gap:10px}
+  #sheet .sh-em{font-size:30px}
+  #sheet .sh-nm{font-weight:900;font-size:17px}
+  #sheet .sh-lv{font-size:11px;color:var(--muted);font-weight:700;margin-top:1px}
+  #sheet .sh-stats{display:flex;gap:14px;margin:12px 0;flex-wrap:wrap}
+  #sheet .sh-stat{font-size:12px;color:var(--muted);font-weight:700}
+  #sheet .sh-stat b{display:block;color:var(--ink);font-size:16px;font-weight:900;margin-top:1px}
+  #sheet .sh-btns{display:flex;gap:8px}
+  #sheet .sh-btns .btn{flex:1;justify-content:center;padding:12px}
+
+  /* ===== Toast / banner ===== */
+  #banner{position:fixed;top:calc(56px + var(--safe-t));left:50%;transform:translateX(-50%) translateY(-14px);
+    z-index:30;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:10px 18px;
+    font-weight:800;font-size:14px;opacity:0;transition:.22s;pointer-events:none;white-space:nowrap;
+    box-shadow:0 8px 26px rgba(0,0,0,.4)}
+  #banner.show{opacity:1;transform:translateX(-50%)}
+
+  /* ===== Overlays (start / gameover) ===== */
+  .overlay{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;background:radial-gradient(120% 90% at 50% 0%,rgba(20,40,58,.9),rgba(5,10,16,.97))}
+  .overlay h1{font-size:34px;font-weight:900;margin:0 0 4px;letter-spacing:-.5px;
+    background:linear-gradient(90deg,#7de6ab,#4ade80,#5aa9ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .overlay .sub{color:var(--muted);font-size:14px;max-width:420px;line-height:1.5;margin:0 0 22px}
+  .overlay .big{font-size:15px;padding:15px 34px}
+  .rune{font-size:60px;margin-bottom:10px;filter:drop-shadow(0 0 18px rgba(74,222,128,.5))}
+  .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:340px;width:100%;margin:0 0 22px}
+  .stats-grid .c{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .stats-grid .c b{display:block;font-size:22px;font-weight:900}
+  .stats-grid .c small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+  .hint{margin-top:16px;color:var(--muted);font-size:12px;max-width:400px;line-height:1.55}
+  .hint b{color:var(--ink)}
+  #fps{position:fixed;top:calc(4px + var(--safe-t));left:6px;z-index:15;font-size:10px;color:rgba(150,200,230,.45);
+    font-variant-numeric:tabular-nums;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="fps"></div>
+
+<div id="topbar">
+  <div class="stat gold"><span class="ico">🪙</span><div><div class="val" id="uiGold">0</div><small>Gold</small></div></div>
+  <div class="stat life"><span class="ico">🛡️</span><div><div class="val" id="uiLife">0</div><small>Langhaus</small></div></div>
+  <div class="stat wave"><span class="ico">⚔️</span><div><div class="val" id="uiWave">0</div><small>Welle</small></div></div>
+  <div class="stat"><span class="ico">💀</span><div><div class="val" id="uiScore">0</div><small>Punkte</small></div></div>
+</div>
+
+<div id="banner"></div>
+
+<div id="sheet">
+  <div class="sh-top">
+    <div class="sh-em" id="shEm">🏹</div>
+    <div><div class="sh-nm" id="shNm">Turm</div><div class="sh-lv" id="shLv">Stufe 1</div></div>
+  </div>
+  <div class="sh-stats">
+    <div class="sh-stat">Schaden<b id="shDmg">0</b></div>
+    <div class="sh-stat">Reichweite<b id="shRng">0</b></div>
+    <div class="sh-stat">Tempo<b id="shRate">0</b></div>
+    <div class="sh-stat">Ziel<b id="shTgt">Erster</b></div>
+  </div>
+  <div class="sh-btns">
+    <button class="btn" id="shTargetBtn">🎯 Ziel</button>
+    <button class="btn primary" id="shUpBtn">⬆️ Upgrade</button>
+    <button class="btn danger" id="shSellBtn">💰 Verkaufen</button>
+  </div>
+</div>
+
+<div id="bottombar">
+  <div id="towerRow"></div>
+  <div id="actionRow">
+    <button class="btn" id="pauseBtn">⏸︎</button>
+    <button class="btn primary" id="waveBtn">▶︎ Welle starten</button>
+    <button class="btn" id="speedBtn">1×</button>
+  </div>
+</div>
+
+<div class="overlay" id="startScreen">
+  <div class="rune">ᛉ</div>
+  <h1>Yggdrasil Defense</h1>
+  <p class="sub">Verteidige das Langhaus am Weltenbaum gegen die Horden aus Jotunheim. Baue Türme entlang des Pfades — die Feinde suchen sich ihren Weg, du zwingst sie durch dein Labyrinth.</p>
+  <button class="btn primary big" id="playBtn">▶︎ Spiel starten</button>
+  <div class="hint">
+    <b>Tippen</b> = Turm setzen · <b>Ziehen</b> = Karte bewegen · <b>Pinch</b> = Zoom<br>
+    <b>Turm antippen</b> = Upgrade / Verkaufen · Ziel: überlebe so viele Wellen wie möglich.
+  </div>
+</div>
+
+<div class="overlay hidden" id="endScreen">
+  <div class="rune" id="endRune">☠️</div>
+  <h1 id="endTitle">Ragnarök</h1>
+  <p class="sub" id="endSub">Das Langhaus ist gefallen.</p>
+  <div class="stats-grid">
+    <div class="c"><b id="endWave">0</b><small>Wellen</small></div>
+    <div class="c"><b id="endScore">0</b><small>Punkte</small></div>
+    <div class="c"><b id="endKills">0</b><small>Feinde</small></div>
+    <div class="c"><b id="endGold">0</b><small>Gold</small></div>
+  </div>
+  <button class="btn primary big" id="againBtn">↻ Neuer Versuch</button>
+  <button class="btn" id="shareBtn" style="margin-top:10px">📤 Ergebnis teilen</button>
+</div>
+
+<script src="game.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+  }
+</script>
+</body>
+</html>
