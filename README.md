@@ -22,6 +22,7 @@ Dies ist der spielbare **Kern-Loop** — im GDD die Module **01–08**, dort als
 | 06 Pathfinding | BFS-Flow-Field von der Basis — Gegner umlaufen deine Türme (Maze-Building) | ✅ |
 | 07 Feinde & Wellen | 5 Gegnertypen, skalierende Wellen, Boss alle 5 Wellen, Welle-früh-starten | ✅ |
 | 08 Türme & Kampf | 5 Turmtypen, 3 Ziel-Modi, Upgrades, Projektile, Splash & Slow | ✅ |
+| 13 Roguelite-Loop | Runen-Wahl (1 von 3) nach jeder Welle, 14 Runen (Common/Rare/Legendary), Meta-Bestwert | ✅ |
 
 ### Türme
 🏹 **Einherjar** (Bogen) · ᛟ **Runestein** (verlangsamt) · ⚡ **Walküre** (schnellfeuer) · 🔨 **Mjölnir** (Flächenschaden) · 🌈 **Bifröst** (Scharfschütze)
@@ -48,7 +49,7 @@ wird abgelehnt.
 ## 🗺️ Roadmap (restliche GDD-Module)
 
 Noch offen, modulweise erweiterbar: **10** Online-Coop (WebRTC P2P), **11** Fog of War & Minimap,
-**12** Events & Wetter, **13** Roguelite-Runen & Meta-Progression, **14** Tech-Baum,
+**12** Events & Wetter, **14** Tech-Baum,
 **15** Cloud-Save & Settings, **16** Capacitor App-Store-Build, **17** Achievements/Game Center,
 **18** Audio & Balance-Politur. Das GDD (`docs/`) beschreibt jedes Modul.
 
