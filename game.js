@@ -47,16 +47,65 @@ const ENEMIES = {
   jormun:   { name:'Jörmungandr', em:'🐉', hp:900, speed:26, reward:120,color:'#5ad0c0', r:22, boss:true },
 };
 
+// ---------- Difficulty (Module 17 core) ----------
+const DIFFS = {
+  easy:     { label:'Leicht',   hp:0.8,  gold:1.2, lives:26 },
+  normal:   { label:'Normal',   hp:1.0,  gold:1.0, lives:20 },
+  ragnarok: { label:'Ragnarök', hp:1.4,  gold:0.9, lives:12 },
+};
+let selDiff = 'normal';
+
+// ---------- Weather (Module 12) ----------  rate = cooldown mult (>1 slower)
+const WEATHERS = {
+  clear:  { name:'Klar',            em:'☀️', dmg:1,    rate:1,    espd:1,    ehp:1,   desc:'Ruhiges Wetter.' },
+  frost:  { name:'Frost',           em:'❄️', dmg:1,    rate:1,    espd:0.8,  ehp:1,   desc:'Feinde sind spürbar verlangsamt.' },
+  storm:  { name:'Sturm',           em:'🌧️', dmg:1,    rate:1.14, espd:1.12, ehp:1,   desc:'Türme feuern langsamer, Feinde schneller.' },
+  ash:    { name:'Aschewolke',      em:'🌋', dmg:1,    rate:1,    espd:1,    ehp:1.22,desc:'Feinde sind deutlich zäher.' },
+  divine: { name:'Göttliches Licht',em:'🌟', dmg:1.25, rate:1,    espd:1,    ehp:1,   desc:'Türme richten +25% Schaden an.' },
+};
+function rollWeather(){
+  if(G.wave<=1) return 'clear';
+  const r=Math.random();
+  if(r<0.42) return 'clear';
+  if(r<0.60) return 'frost';
+  if(r<0.76) return 'storm';
+  if(r<0.90) return 'ash';
+  return 'divine';
+}
+
+// ---------- Mid-wave events (Module 12) ----------
+const EVENTS = [
+  { em:'🪙', msg:'Goldader entdeckt! +80 Gold', run:()=>{ G.gold+=80; G.goldEarned+=80; } },
+  { em:'☄️', msg:'Meteorschlag trifft alle Feinde!', run:()=>{ const d=28+G.wave*4; for(const e of G.enemies){ if(!e.dead){ spawnBurst(e.x,e.y,'#ff9d5a',6); damage(e,d,null);} } } },
+  { em:'🌿', msg:'Weltenbaum heilt · +3 Leben', run:()=>{ G.lives=Math.min(30,G.lives+3); } },
+  { em:'🎶', msg:'Bragis Lied · Türme +30% Feuerrate (8s)', run:()=>{ G.fx.rateMul=0.7; G.fx.rateT=8; } },
+  { em:'🌫️', msg:'Nebelschwaden · Feinde +25% Tempo (6s)', run:()=>{ G.fx.espdMul=1.25; G.fx.espdT=6; } },
+  { em:'⚒️', msg:'Runenschub · +4% Schaden dauerhaft', run:()=>{ G.mods.dmg*=1.04; } },
+  { em:'👹', msg:'Überfall! Zusätzliche Feinde nahen', run:()=>{ const n=3+Math.floor(G.wave/2); for(let k=0;k<n;k++) G.spawnQueue.push(Math.random()<0.5?'berserker':'draugr'); } },
+  { em:'💰', msg:'Händlerkarawane · +15% Gold-Zins jetzt', run:()=>{ const g=Math.round(G.gold*0.15); G.gold+=g; G.goldEarned+=g; } },
+  { em:'🔥', msg:'Muspelheim-Glut · Türme +20% Schaden (10s)', run:()=>{ G.fx.dmgMul=1.2; G.fx.dmgT=10; } },
+  { em:'🧊', msg:'Frostbann · Alle Feinde kurz verlangsamt', run:()=>{ for(const e of G.enemies){ if(!e.dead){ e.slow=0.5; e.slowT=3; } } } },
+  { em:'⚡', msg:'Thors Zorn · trifft die stärksten Feinde', run:()=>{ const s=[...G.enemies].filter(e=>!e.dead).sort((a,b)=>b.hp-a.hp).slice(0,3); for(const e of s){ spawnBurst(e.x,e.y,'#fff2b0',8); damage(e,60+G.wave*6,null);} } },
+  { em:'🌾', msg:'Reiche Ernte · +50 Gold', run:()=>{ G.gold+=50; G.goldEarned+=50; } },
+  { em:'🛡️', msg:'Odins Schutz · Langhaus +2 Leben', run:()=>{ G.lives=Math.min(30,G.lives+2); } },
+  { em:'🐗', msg:'Wildes Getier · Feinde +18% Tempo (5s)', run:()=>{ G.fx.espdMul=1.18; G.fx.espdT=5; } },
+];
+
 // ---------- Game state ----------
 let G;
 function newGame(){
+  const diff = DIFFS[selDiff] || DIFFS.normal;
   G = {
+    diff, diffKey: selDiff,
     grid: new Uint8Array(COLS*ROWS),   // tile type
     tower: new Array(COLS*ROWS).fill(null),
     dist: new Int32Array(COLS*ROWS),   // flow-field distance to base
     flow: new Int8Array(COLS*ROWS*2),  // flow direction per tile (dx,dy)
-    enemies: [], bullets: [], particles: [], floaters: [],
-    gold: 230, lives: 20, wave: 0, score: 0, kills: 0, goldEarned: 230,
+    enemies: [], bullets: [], particles: [], floaters: [], wparticles: [],
+    weather: WEATHERS.clear, weatherKey:'clear',
+    fx: { rateMul:1, rateT:0, espdMul:1, espdT:0, dmgMul:1, dmgT:0 },
+    eventTimer: 0, nextEventAt: 13,
+    gold: 230, lives: diff.lives, wave: 0, score: 0, kills: 0, goldEarned: 230,
     spawn: {c:0, r:(ROWS>>1)}, base: {c:COLS-1, r:(ROWS>>1)},
     selected: 'einherjar',      // tower type to build
     inspect: null,              // tower being inspected
@@ -291,15 +340,21 @@ function startWave(){
   G.spawnQueue = waveComposition(G.wave);
   G.spawnTimer = 0;
   G.waveActive = true;
+  // weather
+  G.weatherKey = rollWeather(); G.weather = WEATHERS[G.weatherKey];
+  updateWeatherChip();
+  // events
+  G.eventTimer = 0; G.nextEventAt = 11 + Math.random()*6;
   refreshTowerRow();
-  banner('Welle '+G.wave+' — '+(G.wave%5===0?'⚠️ BOSS':G.spawnQueue.length+' Feinde'));
+  const wtxt = G.weatherKey!=='clear' ? ' · '+G.weather.em+' '+G.weather.name : '';
+  banner('Welle '+G.wave+' — '+(G.wave%5===0?'⚠️ BOSS':G.spawnQueue.length+' Feinde')+wtxt);
   vibrate(20);
   updateHUD();
 }
 function spawnEnemy(key){
   const d = ENEMIES[key];
   const s = tileCenter(G.spawn.c,G.spawn.r);
-  const sc = hpScale(G.wave);
+  const sc = hpScale(G.wave) * G.diff.hp * G.weather.ehp;
   const hp = Math.round(d.hp*sc);
   G.enemies.push({
     key, def:d, x:s.x, y:s.y+(Math.random()*16-8), r:d.r,
@@ -313,7 +368,7 @@ function updateEnemies(dt){
     if(e.dead) continue;
     // slow timer
     if(e.slowT>0){ e.slowT-=dt; if(e.slowT<=0) e.slow=0; }
-    const spd = e.baseSpeed*(1-e.slow);
+    const spd = e.baseSpeed*(1-e.slow)*G.weather.espd*G.fx.espdMul;
     const c = clamp(Math.floor(e.x/TS),0,COLS-1), r = clamp(Math.floor(e.y/TS),0,ROWS-1);
     const i = idx(c,r);
     // base reached?
@@ -448,8 +503,9 @@ document.getElementById('runeSkip').addEventListener('click',()=>{
 //  TOWERS — targeting & shooting
 // ============================================================
 function effRange(t){ return t.range * G.mods.range; }
-function effRate(t){ return t.rate * G.mods.rate; }
-function effDmg(t){ return t.dmg * G.mods.dmg; }
+function effRate(t){ return t.rate * G.mods.rate * G.weather.rate * G.fx.rateMul; }
+function effDmg(t){ return t.dmg * G.mods.dmg * G.weather.dmg * G.fx.dmgMul; }
+function goldMul(){ return G.mods.gold * G.diff.gold; }
 
 function updateTowers(dt){
   for(let i=0;i<G.tower.length;i++){
@@ -517,7 +573,7 @@ function damage(e,dmg,b){
   if(b && b.slow>0){ e.slow=Math.max(e.slow,b.slow); e.slowT=b.slowT; }
   if(e.hp<=0 && !e.dead){
     e.dead=true; G.kills++; G.score += e.boss?250:Math.max(1,Math.round(e.maxhp/6));
-    const rw = Math.round(e.reward * G.mods.gold);
+    const rw = Math.round(e.reward * goldMul());
     G.gold += rw; G.goldEarned += rw;
     spawnBurst(e.x,e.y,e.def.color,e.boss?26:10);
     floater('+'+rw, e.x, e.y, '#fbbf24');
@@ -571,9 +627,15 @@ function render(){
   drawBullets();
   drawParticles();
   drawPlacementPreview();
+  drawWeather();
   drawFloaters();
 
   ctx.restore();
+
+  // screen-space weather tint
+  if(G && G.weatherKey==='ash'){ ctx.fillStyle='rgba(60,40,30,.18)'; ctx.fillRect(0,0,VW,VH); }
+  else if(G && G.weatherKey==='divine'){ ctx.fillStyle='rgba(255,230,150,.06)'; ctx.fillRect(0,0,VW,VH); }
+  else if(G && G.weatherKey==='storm'){ ctx.fillStyle='rgba(20,30,50,.14)'; ctx.fillRect(0,0,VW,VH); }
 }
 
 function drawTiles(){
@@ -813,12 +875,20 @@ function startGame(){
   updateHUD();
   G.running=true; G.over=false; G.paused=false;
   updateOwnedRunes();
+  updateWeatherChip();
   $('startScreen').classList.add('hidden');
   $('endScreen').classList.add('hidden');
   $('runeScreen').classList.add('hidden');
   $('pauseBtn').textContent='⏸︎';
   banner('Baue Türme · dann ▶︎ Welle starten');
 }
+document.querySelectorAll('.diffBtn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    selDiff = btn.dataset.d;
+    document.querySelectorAll('.diffBtn').forEach(b=>b.classList.toggle('sel', b.dataset.d===selDiff));
+    vibrate(8);
+  });
+});
 $('playBtn').addEventListener('click',startGame);
 $('againBtn').addEventListener('click',startGame);
 $('shareBtn').addEventListener('click',async ()=>{
@@ -826,6 +896,61 @@ $('shareBtn').addEventListener('click',async ()=>{
   try{ if(navigator.share) await navigator.share({title:'Yggdrasil Defense',text,url:location.href});
     else { await navigator.clipboard.writeText(text); banner('Ergebnis kopiert!'); } }catch(e){}
 });
+
+// ============================================================
+//  MODULE 12 — weather chip, events, timed FX, particles
+// ============================================================
+function updateWeatherChip(){
+  const el=$('weatherChip'); if(!el) return;
+  if(G.weatherKey==='clear'){ el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.textContent = G.weather.em+' '+G.weather.name;
+}
+$('weatherChip').addEventListener('click',()=>{ banner(G.weather.em+' '+G.weather.name+' — '+G.weather.desc); });
+
+function triggerEvent(){
+  const ev = EVENTS[(Math.random()*EVENTS.length)|0];
+  ev.run();
+  banner(ev.em+' '+ev.msg);
+  vibrate(18);
+  updateHUD();
+}
+function updateTimedFx(dt){
+  const fx=G.fx;
+  if(fx.rateT>0){ fx.rateT-=dt; if(fx.rateT<=0) fx.rateMul=1; }
+  if(fx.espdT>0){ fx.espdT-=dt; if(fx.espdT<=0) fx.espdMul=1; }
+  if(fx.dmgT>0){ fx.dmgT-=dt; if(fx.dmgT<=0) fx.dmgMul=1; }
+}
+function updateWeatherParticles(dt){
+  const k=G.weatherKey;
+  if(k==='frost'||k==='storm'||k==='ash'){
+    const rate = k==='storm'?3:1.6;
+    for(let n=0;n<rate;n++){
+      const wx=G.cam.x+Math.random()*VW/G.cam.scale;
+      G.wparticles.push({x:wx, y:G.cam.y-10, vy:(k==='storm'?420:k==='ash'?70:120)+Math.random()*80,
+        vx:(k==='storm'?-60:k==='ash'?30:20)*(Math.random()*0.6+0.7), life:2.4, t:0,
+        col:k==='frost'?'#cfeaff':k==='ash'?'#b7a89a':'#8fb8e0', sz:k==='ash'?2.4:1.6, streak:k==='storm'});
+    }
+  } else if(k==='divine'){
+    if(Math.random()<0.4){
+      const wx=G.cam.x+Math.random()*VW/G.cam.scale;
+      G.wparticles.push({x:wx, y:G.cam.y-10, vy:40+Math.random()*40, vx:0, life:3, t:0, col:'#ffe9a8', sz:2, glow:true});
+    }
+  }
+  for(const p of G.wparticles){ p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; }
+  G.wparticles = G.wparticles.filter(p=>p.t<p.life && p.y < G.cam.y+VH/G.cam.scale+20);
+  if(G.wparticles.length>500) G.wparticles.splice(0, G.wparticles.length-500);
+}
+function drawWeather(){
+  for(const p of G.wparticles){
+    ctx.globalAlpha = p.glow?0.8:0.5;
+    ctx.fillStyle=p.col;
+    if(p.streak){ ctx.strokeStyle=p.col; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x-p.vx*0.03,p.y-p.vy*0.03); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.arc(p.x,p.y,p.sz,0,7); ctx.fill(); }
+  }
+  ctx.globalAlpha=1;
+  // ash/divine full-screen tint drawn in screen space (handled in render)
+}
 
 // ============================================================
 //  MAIN LOOP
@@ -851,6 +976,16 @@ function loop(now){
       updateBullets(dt);
     }
     updateParticles(dt);
+    updateTimedFx(dt*steps);
+    updateWeatherParticles(dt);
+    // mid-wave events
+    if(G.waveActive && !G.awaitingRune){
+      G.eventTimer += dt*steps;
+      if(G.eventTimer >= G.nextEventAt && (G.enemies.length || G.spawnQueue.length)){
+        triggerEvent();
+        G.eventTimer = 0; G.nextEventAt = 12 + Math.random()*7;
+      }
+    }
   }
   if(G) render();
   requestAnimationFrame(loop);

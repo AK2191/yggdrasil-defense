@@ -23,6 +23,8 @@ Dies ist der spielbare **Kern-Loop** — im GDD die Module **01–08**, dort als
 | 07 Feinde & Wellen | 5 Gegnertypen, skalierende Wellen, Boss alle 5 Wellen, Welle-früh-starten | ✅ |
 | 08 Türme & Kampf | 5 Turmtypen, 3 Ziel-Modi, Upgrades, Projektile, Splash & Slow | ✅ |
 | 13 Roguelite-Loop | Runen-Wahl (1 von 3) nach jeder Welle, 14 Runen (Common/Rare/Legendary), Meta-Bestwert | ✅ |
+| 12 Events & Wetter | 5 Wetterlagen (Frost/Sturm/Asche/Göttlich) mit Effekten & Partikeln, 14 Mid-Wave-Events | ✅ |
+| 17 Schwierigkeit* | 3 Modi: Leicht / Normal / Ragnarök (Kern; Achievements/Game Center offen) | 🟡 |
 
 ### Türme
 🏹 **Einherjar** (Bogen) · ᛟ **Runestein** (verlangsamt) · ⚡ **Walküre** (schnellfeuer) · 🔨 **Mjölnir** (Flächenschaden) · 🌈 **Bifröst** (Scharfschütze)
@@ -49,9 +51,9 @@ wird abgelehnt.
 ## 🗺️ Roadmap (restliche GDD-Module)
 
 Noch offen, modulweise erweiterbar: **10** Online-Coop (WebRTC P2P), **11** Fog of War & Minimap,
-**12** Events & Wetter, **14** Tech-Baum,
-**15** Cloud-Save & Settings, **16** Capacitor App-Store-Build, **17** Achievements/Game Center,
-**18** Audio & Balance-Politur. Das GDD (`docs/`) beschreibt jedes Modul.
+**14** Tech-Baum, **15** Cloud-Save & Settings, **16** Capacitor App-Store-Build,
+**17** Achievements/Game Center (Schwierigkeit steht bereits), **18** Audio & Balance-Politur.
+Das GDD (`docs/`) beschreibt jedes Modul.
 
 ---
 
