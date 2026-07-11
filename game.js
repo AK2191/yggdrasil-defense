@@ -310,7 +310,7 @@ function tryBuild(c,r){
     def, level:1, dmg:def.dmg, range:def.range*TS, rate:def.rate, cd:0,
     target:'first', invested:cost, angle:-Math.PI/2, flash:0,
   };
-  vibrate(15); spawnBurst(G.tower[i].x, G.tower[i].y, def.color, 8);
+  vibrate(15); sfx('place'); spawnBurst(G.tower[i].x, G.tower[i].y, def.color, 8);
   updateHUD();
 }
 
@@ -348,7 +348,7 @@ function startWave(){
   refreshTowerRow();
   const wtxt = G.weatherKey!=='clear' ? ' · '+G.weather.em+' '+G.weather.name : '';
   banner('Welle '+G.wave+' — '+(G.wave%5===0?'⚠️ BOSS':G.spawnQueue.length+' Feinde')+wtxt);
-  vibrate(20);
+  vibrate(20); sfx('wave');
   updateHUD();
 }
 function spawnEnemy(key){
@@ -402,7 +402,7 @@ function onBaseHit(e){
   G.lives -= dmg;
   spawnBurst(tileCenter(G.base.c,G.base.r).x, tileCenter(G.base.c,G.base.r).y, '#ff5a52', 14);
   flashScreen();
-  vibrate(e.boss?60:30);
+  vibrate(e.boss?60:30); sfx('basehit');
   updateHUD();
   if(G.lives<=0){ G.lives=0; gameOver(); }
 }
@@ -415,6 +415,7 @@ function endWave(){
   vibrate(25);
   refreshTowerRow();
   updateHUD();
+  saveRun();
   // roguelite: offer a rune every wave
   offerRunes(bonus);
 }
@@ -478,7 +479,7 @@ function offerRunes(bonus){
 function takeRune(r){
   r.apply(G.mods);
   G.runes[r.id]=(G.runes[r.id]||0)+1;
-  vibrate(20);
+  vibrate(20); sfx('rune');
   closeRunes();
   banner(r.em+' '+r.name+' aktiviert!');
   updateOwnedRunes();
@@ -546,6 +547,7 @@ function fire(t,tgt){
     splash, slow, slowT:(def.slowT||G.mods.slowT), dead:false,
   });
   if(t.key==='mjolnir') vibrate(8);
+  sfx('shoot');
 }
 function updateBullets(dt){
   for(const b of G.bullets){
@@ -577,7 +579,7 @@ function damage(e,dmg,b){
     G.gold += rw; G.goldEarned += rw;
     spawnBurst(e.x,e.y,e.def.color,e.boss?26:10);
     floater('+'+rw, e.x, e.y, '#fbbf24');
-    if(e.boss){ banner('🐉 Boss besiegt! +'+e.reward+' 🪙'); vibrate(40); }
+    if(e.boss){ banner('🐉 Boss besiegt! +'+rw+' 🪙'); vibrate(40); sfx('boss'); } else sfx('die');
     updateHUD();
   }
 }
@@ -813,7 +815,7 @@ $('shUpBtn').addEventListener('click',()=>{
   if(G.gold<cost){ buzz(); return; }
   G.gold-=cost; t.level++;
   t.dmg=Math.round(t.dmg*1.6); t.range*=1.08; t.rate*=0.9;
-  spawnBurst(t.x,t.y,t.def.color,12); vibrate(15);
+  spawnBurst(t.x,t.y,t.def.color,12); vibrate(15); sfx('upgrade');
   openSheet(t); updateHUD();
 });
 $('shTargetBtn').addEventListener('click',()=>{
@@ -825,7 +827,7 @@ $('shSellBtn').addEventListener('click',()=>{
   const t=G.inspect; if(!t) return;
   G.gold+=Math.floor(t.invested*G.mods.sell);
   const i=idx(t.c,t.r); G.grid[i]=T_GROUND; G.tower[i]=null;
-  computeFlow(); spawnBurst(t.x,t.y,'#fbbf24',10); vibrate(15);
+  computeFlow(); spawnBurst(t.x,t.y,'#fbbf24',10); vibrate(15); sfx('sell');
   closeSheet(); updateHUD();
 });
 
@@ -843,7 +845,7 @@ function banner(msg){
   const b=$('banner'); b.textContent=msg; b.classList.add('show');
   clearTimeout(bannerT); bannerT=setTimeout(()=>b.classList.remove('show'),1900);
 }
-function vibrate(ms){ if(navigator.vibrate) try{navigator.vibrate(ms);}catch(e){} }
+function vibrate(ms){ if(hapticOn && navigator.vibrate) try{navigator.vibrate(ms);}catch(e){} }
 function buzz(){ vibrate([10,40,10]); }
 
 // ============================================================
@@ -867,12 +869,15 @@ function gameOver(){
   $('endWave').textContent=G.wave; $('endScore').textContent=fmt(G.score);
   $('endKills').textContent=G.kills; $('endGold').textContent=fmt(G.goldEarned);
   $('endScreen').classList.remove('hidden');
-  vibrate([60,40,60,40,120]);
+  vibrate([60,40,60,40,120]); sfx('over');
+  clearSave();
 }
 function startGame(){
+  clearSave();
   newGame();
   buildTowerRow();
   updateHUD();
+  initAudio();
   G.running=true; G.over=false; G.paused=false;
   updateOwnedRunes();
   updateWeatherChip();
@@ -912,7 +917,7 @@ function triggerEvent(){
   const ev = EVENTS[(Math.random()*EVENTS.length)|0];
   ev.run();
   banner(ev.em+' '+ev.msg);
-  vibrate(18);
+  vibrate(18); sfx('event');
   updateHUD();
 }
 function updateTimedFx(dt){
@@ -953,9 +958,105 @@ function drawWeather(){
 }
 
 // ============================================================
+//  MODULE 15/18 — Audio (Web Audio), settings, save/resume
+// ============================================================
+const SND = { ctx:null, master:null, on:true };
+let hapticOn = true, lastShootSnd = 0;
+function loadSettings(){
+  try{ SND.on = localStorage.getItem('ygg_sound')!=='0'; hapticOn = localStorage.getItem('ygg_haptic')!=='0'; }catch(e){}
+}
+function initAudio(){
+  if(SND.ctx){ if(SND.ctx.state==='suspended') SND.ctx.resume(); return; }
+  try{
+    SND.ctx = new (window.AudioContext||window.webkitAudioContext)();
+    SND.master = SND.ctx.createGain();
+    SND.master.gain.value = SND.on?0.5:0;
+    SND.master.connect(SND.ctx.destination);
+  }catch(e){}
+}
+function beep(freq,dur,type,vol,slideTo){
+  if(!SND.ctx || !SND.on) return;
+  const t=SND.ctx.currentTime;
+  const o=SND.ctx.createOscillator(), g=SND.ctx.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(freq,t);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1,slideTo),t+dur);
+  g.gain.setValueAtTime(vol||0.3,t);
+  g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
+  o.connect(g); g.connect(SND.master); o.start(t); o.stop(t+dur+0.02);
+}
+function sfx(name){
+  if(!SND.on || !SND.ctx) return;
+  switch(name){
+    case 'shoot': { const now=performance.now(); if(now-lastShootSnd<45) return; lastShootSnd=now; beep(620+Math.random()*90,0.045,'square',0.05); break; }
+    case 'place':   beep(170,0.12,'sine',0.28,340); break;
+    case 'upgrade': beep(420,0.2,'sine',0.28,860); break;
+    case 'sell':    beep(520,0.12,'sine',0.2,190); break;
+    case 'die':     beep(150,0.11,'sawtooth',0.12,60); break;
+    case 'boss':    beep(90,0.45,'sawtooth',0.32,45); break;
+    case 'wave':    beep(330,0.1,'square',0.2); setTimeout(()=>beep(494,0.15,'square',0.2),110); break;
+    case 'basehit': beep(120,0.28,'sawtooth',0.35,45); break;
+    case 'rune':    beep(523,0.12,'sine',0.26); setTimeout(()=>beep(659,0.12,'sine',0.26),95); setTimeout(()=>beep(784,0.2,'sine',0.26),190); break;
+    case 'event':   beep(880,0.09,'sine',0.14,1250); break;
+    case 'over':    beep(420,0.5,'sawtooth',0.3,70); break;
+    case 'tap':     beep(600,0.03,'square',0.05); break;
+  }
+}
+// settings sheet
+$('settingsBtn').addEventListener('click',()=>{ $('setSound').checked=SND.on; $('setHaptic').checked=hapticOn; $('settingsSheet').classList.remove('hidden'); });
+$('setClose').addEventListener('click',()=>$('settingsSheet').classList.add('hidden'));
+$('settingsSheet').addEventListener('click',e=>{ if(e.target.id==='settingsSheet') $('settingsSheet').classList.add('hidden'); });
+$('setSound').addEventListener('change',e=>{
+  SND.on=e.target.checked; try{ localStorage.setItem('ygg_sound', SND.on?'1':'0'); }catch(x){}
+  if(SND.on){ initAudio(); if(SND.master) SND.master.gain.value=0.5; sfx('tap'); } else if(SND.master){ SND.master.gain.value=0; }
+});
+$('setHaptic').addEventListener('change',e=>{ hapticOn=e.target.checked; try{ localStorage.setItem('ygg_haptic', hapticOn?'1':'0'); }catch(x){} if(hapticOn) vibrate(15); });
+
+// save / resume (Module 15)
+function serializeRun(){
+  if(!G || G.over || G.wave<1) return null;
+  const towers=[];
+  for(const t of G.tower){ if(t) towers.push({c:t.c,r:t.r,key:t.key,level:t.level,dmg:t.dmg,range:t.range,rate:t.rate,target:t.target,invested:t.invested,angle:t.angle}); }
+  return { v:1, grid:Array.from(G.grid), towers, gold:G.gold, lives:G.lives, wave:G.wave,
+    score:G.score, kills:G.kills, goldEarned:G.goldEarned, mods:G.mods, runes:G.runes, diffKey:G.diffKey };
+}
+function saveRun(){ const s=serializeRun(); if(s){ try{ localStorage.setItem('ygg_save', JSON.stringify(s)); }catch(e){} } }
+function clearSave(){ try{ localStorage.removeItem('ygg_save'); }catch(e){} }
+function loadSave(){ try{ return JSON.parse(localStorage.getItem('ygg_save')||'null'); }catch(e){ return null; } }
+function updateResumeBtn(){
+  const s=loadSave(); const btn=$('resumeBtn');
+  if(s && s.wave>0){ btn.style.display=''; btn.innerHTML='▶︎ Fortsetzen · Welle '+s.wave; }
+  else btn.style.display='none';
+}
+function resumeRun(){
+  const s=loadSave(); if(!s){ startGame(); return; }
+  selDiff = s.diffKey||'normal';
+  newGame();
+  G.grid = new Uint8Array(s.grid);
+  G.tower = new Array(COLS*ROWS).fill(null);
+  for(const tt of s.towers){
+    const def=TOWERS[tt.key]; if(!def) continue; const i=idx(tt.c,tt.r);
+    G.tower[i]={ key:tt.key,c:tt.c,r:tt.r,x:tt.c*TS+TS/2,y:tt.r*TS+TS/2,def,level:tt.level,
+      dmg:tt.dmg,range:tt.range,rate:tt.rate,cd:0,target:tt.target,invested:tt.invested,angle:tt.angle||-Math.PI/2,flash:0 };
+    G.grid[i]=T_TOWER;
+  }
+  G.gold=s.gold; G.lives=s.lives; G.wave=s.wave; G.score=s.score; G.kills=s.kills; G.goldEarned=s.goldEarned;
+  Object.assign(G.mods, s.mods||{}); G.runes=s.runes||{};
+  computeFlow();
+  buildTowerRow(); refreshTowerRow(); updateOwnedRunes(); updateWeatherChip();
+  initAudio();
+  G.running=true; G.over=false; G.paused=false;
+  $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('runeScreen').classList.add('hidden');
+  $('pauseBtn').textContent='⏸︎';
+  centerCam();
+  banner('Fortgesetzt — Welle '+G.wave);
+}
+$('resumeBtn').addEventListener('click',resumeRun);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveRun(); });
+
+// ============================================================
 //  MAIN LOOP
 // ============================================================
-let last=performance.now(), fpsAcc=0, fpsN=0, fpsShown=0;
+let last=performance.now(), fpsAcc=0, fpsN=0, fpsShown=0, saveAcc=0;
 function loop(now){
   let dt=(now-last)/1000; last=now;
   if(dt>0.05) dt=0.05; // clamp big gaps
@@ -986,14 +1087,19 @@ function loop(now){
         G.eventTimer = 0; G.nextEventAt = 12 + Math.random()*7;
       }
     }
+    // periodic auto-save between waves (Module 15)
+    saveAcc += dt;
+    if(saveAcc>=20){ saveAcc=0; if(!G.waveActive && !G.awaitingRune && G.wave>0) saveRun(); }
   }
   if(G) render();
   requestAnimationFrame(loop);
 }
 
 // boot
+loadSettings();
 newGame();
 buildTowerRow();
 showBest();
+updateResumeBtn();
 render();
 requestAnimationFrame(loop);

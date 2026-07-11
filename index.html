@@ -116,6 +116,17 @@
   #weatherChip{position:fixed;top:calc(74px + var(--safe-t));left:50%;transform:translateX(-50%);z-index:16;
     background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12px;
     font-weight:800;display:flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,0,0,.3);backdrop-filter:blur(6px)}
+  #settingsBtn{position:fixed;top:calc(72px + var(--safe-t));left:8px;z-index:17;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;font-size:15px;opacity:.85;
+    width:38px;height:38px;padding:0;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .setRow{display:flex;align-items:center;justify-content:space-between;padding:13px 2px;border-bottom:1px solid var(--line);
+    font-weight:700;font-size:15px}
+  .setRow input[type=checkbox]{width:46px;height:27px;appearance:none;-webkit-appearance:none;background:rgba(120,140,160,.3);
+    border-radius:999px;position:relative;transition:.15s;cursor:pointer;flex:0 0 auto}
+  .setRow input[type=checkbox]:checked{background:var(--acc)}
+  .setRow input[type=checkbox]::after{content:'';position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;
+    background:#fff;transition:.15s}
+  .setRow input[type=checkbox]:checked::after{left:22px}
   .diffBtn{padding:9px 13px;font-size:13px}
   .diffBtn.sel{border-color:var(--acc);background:linear-gradient(180deg,rgba(74,222,128,.18),rgba(74,222,128,.05));color:#eafff0}
   #fps{position:fixed;top:calc(4px + var(--safe-t));left:6px;z-index:15;font-size:10px;color:rgba(150,200,230,.45);
@@ -126,6 +137,17 @@
 <canvas id="game"></canvas>
 <div id="fps"></div>
 <div id="ownedRunes"></div>
+<button id="settingsBtn" aria-label="Einstellungen">⚙️</button>
+
+<div class="overlay hidden" id="settingsSheet" style="background:rgba(4,10,16,.82)">
+  <div style="background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:22px;max-width:360px;width:100%;box-shadow:0 16px 50px rgba(0,0,0,.6)">
+    <h1 style="font-size:22px;margin:0 0 16px">Einstellungen</h1>
+    <label class="setRow"><span>🔊 Sound</span><input type="checkbox" id="setSound" checked></label>
+    <label class="setRow"><span>📳 Vibration</span><input type="checkbox" id="setHaptic" checked></label>
+    <div class="setRow" style="border:none"><span>🌐 Sprache</span><span style="color:var(--muted);font-size:13px">Deutsch</span></div>
+    <button class="btn primary" id="setClose" style="width:100%;justify-content:center;margin-top:14px">Fertig</button>
+  </div>
+</div>
 
 <div id="topbar">
   <div class="stat gold"><span class="ico">🪙</span><div><div class="val" id="uiGold">0</div><small>Gold</small></div></div>
@@ -174,7 +196,8 @@
     <button class="btn diffBtn sel" data-d="normal">⚔️ Normal</button>
     <button class="btn diffBtn" data-d="ragnarok">💀 Ragnarök</button>
   </div>
-  <button class="btn primary big" id="playBtn">▶︎ Spiel starten</button>
+  <button class="btn primary big" id="resumeBtn" style="display:none;margin-bottom:10px">▶︎ Fortsetzen</button>
+  <button class="btn primary big" id="playBtn">▶︎ Neues Spiel</button>
   <div class="hint">
     <b>Tippen</b> = Turm setzen · <b>Ziehen</b> = Karte bewegen · <b>Pinch</b> = Zoom<br>
     <b>Turm antippen</b> = Upgrade / Verkaufen · Ziel: überlebe so viele Wellen wie möglich.
