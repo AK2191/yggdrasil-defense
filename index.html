@@ -45,10 +45,12 @@
   .twr:active{transform:scale(.95)}
   .twr.sel{border-color:var(--acc);background:linear-gradient(180deg,rgba(74,222,128,.18),rgba(74,222,128,.05))}
   .twr.locked{opacity:.4}
-  .twr .em{font-size:22px;line-height:1}
-  .twr .nm{font-size:10px;font-weight:800;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .twr .cost{font-size:11px;font-weight:800;color:var(--gold);margin-top:2px}
+  .twr .twr-ico{width:40px;height:40px;display:block;margin:0 auto}
+  .twr .nm{font-size:10px;font-weight:800;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .twr .cost{font-size:11px;font-weight:800;color:var(--gold);margin-top:2px;display:flex;align-items:center;justify-content:center;gap:3px}
   .twr .cost.na{color:var(--red)}
+  .coin{width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe08a,#fbbf24 60%,#b8860b);
+    box-shadow:inset 0 0 0 1px rgba(120,80,10,.6);display:inline-block;flex:0 0 auto}
 
   #actionRow{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:8px}
   .btn{pointer-events:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);
@@ -66,7 +68,7 @@
     transform:translateY(12px);opacity:0;transition:.18s;pointer-events:none}
   #sheet.show{transform:none;opacity:1;pointer-events:auto}
   #sheet .sh-top{display:flex;align-items:center;gap:10px}
-  #sheet .sh-em{font-size:30px}
+  #sheet .sh-em{width:48px;height:48px;flex:0 0 auto}
   #sheet .sh-nm{font-weight:900;font-size:17px}
   #sheet .sh-lv{font-size:11px;color:var(--muted);font-weight:700;margin-top:1px}
   #sheet .sh-stats{display:flex;gap:14px;margin:12px 0;flex-wrap:wrap}
@@ -102,7 +104,7 @@
     border-radius:18px;padding:16px 12px;text-align:center;transition:transform .1s,border-color .12s,background .12s;
     position:relative;overflow:hidden}
   .runecard:active{transform:scale(.96)}
-  .runecard .rc-em{font-size:34px;line-height:1;margin-bottom:6px}
+  .runecard .rc-em{width:44px;height:44px;display:block;margin:0 auto 4px}
   .runecard .rc-nm{font-weight:900;font-size:15px}
   .runecard .rc-desc{color:var(--muted);font-size:12px;line-height:1.4;margin-top:6px}
   .runecard .rc-rar{position:absolute;top:0;left:0;right:0;height:4px}
@@ -121,6 +123,7 @@
     width:38px;height:38px;padding:0;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.3)}
   .setRow{display:flex;align-items:center;justify-content:space-between;padding:13px 2px;border-bottom:1px solid var(--line);
     font-weight:700;font-size:15px}
+  .setL{display:flex;align-items:center;gap:9px}
   .setRow input[type=checkbox]{width:46px;height:27px;appearance:none;-webkit-appearance:none;background:rgba(120,140,160,.3);
     border-radius:999px;position:relative;transition:.15s;cursor:pointer;flex:0 0 auto}
   .setRow input[type=checkbox]:checked{background:var(--acc)}
@@ -137,23 +140,23 @@
 <canvas id="game"></canvas>
 <div id="fps"></div>
 <div id="ownedRunes"></div>
-<button id="settingsBtn" aria-label="Einstellungen">⚙️</button>
+<button id="settingsBtn" aria-label="Einstellungen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#cfe0ea" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" stroke-linecap="round"/></svg></button>
 
 <div class="overlay hidden" id="settingsSheet" style="background:rgba(4,10,16,.82)">
   <div style="background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:22px;max-width:360px;width:100%;box-shadow:0 16px 50px rgba(0,0,0,.6)">
     <h1 style="font-size:22px;margin:0 0 16px">Einstellungen</h1>
-    <label class="setRow"><span>🔊 Sound</span><input type="checkbox" id="setSound" checked></label>
-    <label class="setRow"><span>📳 Vibration</span><input type="checkbox" id="setHaptic" checked></label>
-    <div class="setRow" style="border:none"><span>🌐 Sprache</span><span style="color:var(--muted);font-size:13px">Deutsch</span></div>
+    <label class="setRow"><span class="setL"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#4ade80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z" fill="#4ade80" stroke="none"/><path d="M16 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a8 8 0 0 1 0 12"/></svg> Sound</span><input type="checkbox" id="setSound" checked></label>
+    <label class="setRow"><span class="setL"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#4ade80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg> Vibration</span><input type="checkbox" id="setHaptic" checked></label>
+    <div class="setRow" style="border:none"><span class="setL"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#5aa9ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></svg> Sprache</span><span style="color:var(--muted);font-size:13px">Deutsch</span></div>
     <button class="btn primary" id="setClose" style="width:100%;justify-content:center;margin-top:14px">Fertig</button>
   </div>
 </div>
 
 <div id="topbar">
-  <div class="stat gold"><span class="ico">🪙</span><div><div class="val" id="uiGold">0</div><small>Gold</small></div></div>
-  <div class="stat life"><span class="ico">🛡️</span><div><div class="val" id="uiLife">0</div><small>Langhaus</small></div></div>
-  <div class="stat wave"><span class="ico">⚔️</span><div><div class="val" id="uiWave">0</div><small>Welle</small></div></div>
-  <div class="stat"><span class="ico">💀</span><div><div class="val" id="uiScore">0</div><small>Punkte</small></div></div>
+  <div class="stat gold"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="9" fill="#fbbf24"/><circle cx="12" cy="12" r="9" fill="none" stroke="#7a5a12" stroke-width="1.4"/><circle cx="12" cy="12" r="5.4" fill="none" stroke="#7a5a12" stroke-width="1.3"/><path d="M9.6 15.2V8.8h1.5v2.4h1.8V8.8h1.5v6.4h-1.5v-2.6h-1.8v2.6z" fill="#7a5a12"/></svg></span><div><div class="val" id="uiGold">0</div><small>Gold</small></div></div>
+  <div class="stat life"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2.5 4.5 5.2v6.2c0 4.4 3.1 8.1 7.5 10.1 4.4-2 7.5-5.7 7.5-10.1V5.2z" fill="#ff5a52"/><path d="M12 2.5 4.5 5.2v6.2c0 4.4 3.1 8.1 7.5 10.1 4.4-2 7.5-5.7 7.5-10.1V5.2z" fill="none" stroke="#7a1f1c" stroke-width="1.2"/><path d="M8.6 12l2.2 2.3 4-4.6" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><div class="val" id="uiLife">0</div><small>Langhaus</small></div></div>
+  <div class="stat wave"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16"><g stroke="#5aa9ff" stroke-width="2" stroke-linecap="round"><path d="M4 4l11 11"/><path d="M20 4L9 15"/></g><path d="M13 15l3 3-1.5 1.5-3-3z" fill="#5aa9ff"/><path d="M11 15l-3 3 1.5 1.5 3-3z" fill="#5aa9ff"/></svg></span><div><div class="val" id="uiWave">0</div><small>Welle</small></div></div>
+  <div class="stat"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 3c-4.4 0-7.5 3-7.5 7 0 2.3 1.1 3.9 2.5 5v2.2c0 .9.7 1.6 1.6 1.6h6.8c.9 0 1.6-.7 1.6-1.6V15c1.4-1.1 2.5-2.7 2.5-5 0-4-3.1-7-7.5-7z" fill="#d7e6f0"/><circle cx="9" cy="11.5" r="1.8" fill="#1a2530"/><circle cx="15" cy="11.5" r="1.8" fill="#1a2530"/><path d="M11 17h2v2h-2z" fill="#1a2530"/></svg></span><div><div class="val" id="uiScore">0</div><small>Punkte</small></div></div>
 </div>
 
 <div id="weatherChip" class="hidden"></div>
@@ -161,7 +164,7 @@
 
 <div id="sheet">
   <div class="sh-top">
-    <div class="sh-em" id="shEm">🏹</div>
+    <canvas class="sh-em" id="shEm" width="96" height="96"></canvas>
     <div><div class="sh-nm" id="shNm">Turm</div><div class="sh-lv" id="shLv">Stufe 1</div></div>
   </div>
   <div class="sh-stats">
@@ -171,9 +174,9 @@
     <div class="sh-stat">Ziel<b id="shTgt">Erster</b></div>
   </div>
   <div class="sh-btns">
-    <button class="btn" id="shTargetBtn">🎯 Ziel</button>
-    <button class="btn primary" id="shUpBtn">⬆️ Upgrade</button>
-    <button class="btn danger" id="shSellBtn">💰 Verkaufen</button>
+    <button class="btn" id="shTargetBtn">Ziel</button>
+    <button class="btn primary" id="shUpBtn">Upgrade</button>
+    <button class="btn danger" id="shSellBtn">Verkaufen</button>
   </div>
 </div>
 
@@ -192,9 +195,9 @@
   <p class="sub">Verteidige das Langhaus am Weltenbaum gegen die Horden aus Jotunheim. Baue Türme entlang des Pfades — die Feinde suchen sich ihren Weg, du zwingst sie durch dein Labyrinth.</p>
   <div id="bestLine" style="color:var(--gold);font-weight:800;font-size:14px;margin:-8px 0 14px"></div>
   <div id="diffRow" style="display:flex;gap:8px;margin-bottom:20px">
-    <button class="btn diffBtn" data-d="easy">🌱 Leicht</button>
-    <button class="btn diffBtn sel" data-d="normal">⚔️ Normal</button>
-    <button class="btn diffBtn" data-d="ragnarok">💀 Ragnarök</button>
+    <button class="btn diffBtn" data-d="easy">Leicht</button>
+    <button class="btn diffBtn sel" data-d="normal">Normal</button>
+    <button class="btn diffBtn" data-d="ragnarok">Ragnarök</button>
   </div>
   <button class="btn primary big" id="resumeBtn" style="display:none;margin-bottom:10px">▶︎ Fortsetzen</button>
   <button class="btn primary big" id="playBtn">▶︎ Neues Spiel</button>
@@ -209,11 +212,11 @@
   <h1 style="font-size:26px">Wähle eine Rune</h1>
   <p class="sub" id="runeSub">Welle überstanden — der Weltenbaum gewährt dir Macht.</p>
   <div id="runeCards"></div>
-  <button class="btn" id="runeSkip" style="margin-top:16px">Überspringen (+40 🪙)</button>
+  <button class="btn" id="runeSkip" style="margin-top:16px">Überspringen (+40 Gold)</button>
 </div>
 
 <div class="overlay hidden" id="endScreen">
-  <div class="rune" id="endRune">☠️</div>
+  <div class="rune" id="endRune">ᛦ</div>
   <h1 id="endTitle">Ragnarök</h1>
   <p class="sub" id="endSub">Das Langhaus ist gefallen.</p>
   <div class="stats-grid">
@@ -223,7 +226,7 @@
     <div class="c"><b id="endGold">0</b><small>Gold</small></div>
   </div>
   <button class="btn primary big" id="againBtn">↻ Neuer Versuch</button>
-  <button class="btn" id="shareBtn" style="margin-top:10px">📤 Ergebnis teilen</button>
+  <button class="btn" id="shareBtn" style="margin-top:10px">Ergebnis teilen</button>
 </div>
 
 <script src="game.js"></script>

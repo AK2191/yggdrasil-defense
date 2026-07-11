@@ -8,6 +8,13 @@ läuft direkt im Browser und lässt sich „Zum Homescreen hinzufügen".
 
 ---
 
+## 🎨 Grafik
+Komplett **selbst gezeichnete Vektorgrafik** (keine Emoji) im UE5-inspirierten Look:
+metallische Turm-Sprites mit rotierenden Läufen & Glow-Kernen, volumetrisch schattierte
+Gegner, glühendes Spawn-Rift & Festung, additive Projektil-Bloom-Effekte, Ambient-Licht,
+schattierte Felsen und cinematische Vignette. HUD-Icons als Inline-SVG, Runen als
+prozedurale Sigille. Performance-optimiert (vorgerendertes Terrain + Sprite-Cache) für 60 FPS.
+
 ## 🎮 Was drin ist (aktueller Stand)
 
 Dies ist der spielbare **Kern-Loop** — im GDD die Module **01–08**, dort als *„Spielbar!"* markiert:
