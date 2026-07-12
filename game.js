@@ -366,10 +366,12 @@ function spawnEnemy(key){
 
 function updateEnemies(dt){
   for(const e of G.enemies){
-    if(e.dead) continue;
+    if(e.dead){ e.dying=(e.dying||0)+dt; continue; }   // corpse death-anim timer
+    if(e.hitFlash>0) e.hitFlash-=dt;
     // slow timer
     if(e.slowT>0){ e.slowT-=dt; if(e.slowT<=0) e.slow=0; }
     const spd = e.baseSpeed*(1-e.slow)*G.weather.espd*G.fx.espdMul;
+    e.anim = (e.anim||0) + dt*spd*0.11;   // walk cycle synced to speed
     const c = clamp(Math.floor(e.x/TS),0,COLS-1), r = clamp(Math.floor(e.y/TS),0,ROWS-1);
     const i = idx(c,r);
     // base reached?
@@ -389,12 +391,12 @@ function updateEnemies(dt){
     e.x += (fx/len)*spd*dt;
     e.y += (fy/len)*spd*dt;
   }
-  // cull
+  // cull (keep corpses briefly for the death animation)
   if(G.enemies.length){
-    G.enemies = G.enemies.filter(e=>!e.dead);
+    G.enemies = G.enemies.filter(e=> !e.dead || (e.dying||0)<0.42);
   }
-  // wave end check
-  if(G.waveActive && G.spawnQueue.length===0 && G.enemies.length===0){
+  // wave end check (ignore lingering corpses)
+  if(G.waveActive && G.spawnQueue.length===0 && !G.enemies.some(e=>!e.dead)){
     endWave();
   }
 }
@@ -540,6 +542,7 @@ function updateTowers(dt){
   for(let i=0;i<G.tower.length;i++){
     const t = G.tower[i]; if(!t) continue;
     if(t.flash>0) t.flash-=dt;
+    if(t.recoil>0) t.recoil-=dt*7;
     t.cd -= dt;
     const tgt = pickTarget(t);
     if(tgt){
@@ -565,7 +568,7 @@ function pickTarget(t){
   return best;
 }
 function fire(t,tgt){
-  t.flash = 0.08;
+  t.flash = 0.08; t.recoil = 1;
   const def = t.def;
   const splash = Math.max(def.splash?def.splash*TS:0, G.mods.splash*TS);
   const slow = Math.max(def.slow||0, G.mods.slow);
@@ -600,9 +603,11 @@ function hitBullet(b){
 }
 function damage(e,dmg,b){
   e.hp -= dmg;
+  e.hitFlash = 0.12;
   if(b && b.slow>0){ e.slow=Math.max(e.slow,b.slow); e.slowT=b.slowT; }
   if(e.hp<=0 && !e.dead){
-    e.dead=true; G.kills++; G.score += e.boss?250:Math.max(1,Math.round(e.maxhp/6));
+    e.dead=true; e.dying=0; e.deathSpin=(Math.random()*2-1)*3;
+    G.kills++; G.score += e.boss?250:Math.max(1,Math.round(e.maxhp/6));
     const rw = Math.round(e.reward * goldMul());
     G.gold += rw; G.goldEarned += rw;
     spawnBurst(e.x,e.y,e.def.color,e.boss?26:10);
@@ -774,10 +779,16 @@ function drawTowerBase(c2,key,cx,cy,R){
   }
 }
 // ROTATING weapon on top (drawn each frame)
-function paintTowerWeapon(c2,key,cx,cy,R,angle,now){
+function paintTowerWeapon(c2,key,cx,cy,R,angle,now,recoil){
   const col=TOWERS[key].color;
   if(key==='runestein' || key==='bifrost') return; // static towers
-  c2.save(); c2.translate(cx,cy-R*0.15); c2.rotate(angle);
+  recoil=Math.max(0,recoil||0);
+  const idle=Math.sin(now*2.2 + cx*0.05)*R*0.03;   // subtle idle sway
+  c2.save(); c2.translate(cx,cy-R*0.15+idle); c2.rotate(angle);
+  c2.translate(-recoil*R*0.32, 0);                  // kick back along barrel
+  if(key==='walkure'){ // fluttering wings
+    c2.rotate(Math.sin(now*14)*0.05);
+  }
   switch(key){
     case 'einherjar': { // wooden ballista
       c2.strokeStyle=MAT.wood[1]; c2.lineWidth=R*0.16; c2.lineCap='round';
@@ -1005,9 +1016,11 @@ function drawTowers(){
     }
     const bs=TOWER_BASE_SPR[t.key];
     if(bs) ctx.drawImage(bs.cv, t.x-bs.s/2, t.y-bs.s/2, bs.s, bs.s);
-    paintTowerWeapon(ctx, t.key, t.x, t.y, R_TOWER, t.angle, performance.now()/1000);
+    paintTowerWeapon(ctx, t.key, t.x, t.y, R_TOWER, t.angle, performance.now()/1000, t.recoil||0);
     // glowing core
     const gy=(t.key==='runestein')?t.y-R_TOWER*0.15:(t.key==='bifrost')?t.y-R_TOWER*0.5:t.y-R_TOWER*0.15;
+    if(t.key==='runestein'||t.key==='bifrost'){ const pl=0.5+Math.sin(performance.now()/1000*3+t.x*0.1)*0.5;
+      ctx.globalCompositeOperation='lighter'; glowSprite(t.x,gy,R_TOWER*(0.8+pl*0.5),0.16+pl*0.14); ctx.globalCompositeOperation='source-over'; }
     if(t.flash>0){ ctx.globalCompositeOperation='lighter'; glowSprite(t.x,gy,R_TOWER*1.1,0.5*(t.flash/0.08)); ctx.globalCompositeOperation='source-over'; }
     ctx.fillStyle=hexA(shade(t.def.color,1.7),.9); ctx.beginPath(); ctx.arc(t.x,gy,R_TOWER*0.13,0,7); ctx.fill();
     // level pips
@@ -1016,13 +1029,33 @@ function drawTowers(){
   }
 }
 function drawEnemies(){
+  const sq=performance.now()/1000;
   for(const e of G.enemies){
-    // shadow
-    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x,e.y+e.r*0.7,e.r*0.9,e.r*0.35,0,0,7); ctx.fill();
-    if(e.boss){ ctx.globalCompositeOperation='lighter'; glowSprite(e.x,e.y,e.r*2.4,0.35); ctx.globalCompositeOperation='source-over'; }
-    const sp=ENEMY_SPR[e.key];
-    if(sp) ctx.drawImage(sp.cv, e.x-sp.s/2, e.y-sp.s/2, sp.s, sp.s);
-    if(e.slow>0){ ctx.strokeStyle=hexA('#7db8ff',.8); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(e.x,e.y,e.r+2,0,7); ctx.stroke(); }
+    const sp=ENEMY_SPR[e.key]; if(!sp) continue;
+    const dying=e.dead?clamp((e.dying||0)/0.42,0,1):0;
+    // ground shadow (stays on the ground, shrinks as corpse fades)
+    ctx.globalAlpha=(1-dying)*1;
+    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(e.x,e.y+e.r*0.7,e.r*0.9*(1-dying*0.5),e.r*0.35*(1-dying*0.5),0,0,7); ctx.fill();
+    if(e.boss && !e.dead){ ctx.globalCompositeOperation='lighter'; glowSprite(e.x,e.y,e.r*2.4,0.35); ctx.globalCompositeOperation='source-over'; }
+    // walk cycle: vertical bob + squash&stretch + slight lean
+    const a=e.anim||0;
+    const bob=e.dead?0:Math.sin(a)*e.r*0.14 - Math.abs(Math.sin(a))*e.r*0.04;
+    const sqz=e.dead?1:1+Math.sin(a*2)*0.06;
+    const lean=e.dead?(e.deathSpin||0)*dying:Math.sin(a)*0.06;
+    const scl=(1-dying)*(e.dead?1:1);
+    ctx.save();
+    ctx.translate(e.x, e.y+bob);
+    ctx.rotate(lean);
+    ctx.scale(scl*(2-sqz), scl*sqz);
+    ctx.globalAlpha=1-dying;
+    ctx.drawImage(sp.cv, -sp.s/2, -sp.s/2, sp.s, sp.s);
+    // hit flash (additive white pop)
+    if(e.hitFlash>0){ ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=(e.hitFlash/0.12)*0.6;
+      ctx.drawImage(sp.cv, -sp.s/2, -sp.s/2, sp.s, sp.s); ctx.globalCompositeOperation='source-over'; }
+    ctx.restore();
+    ctx.globalAlpha=1;
+    if(e.dead) continue;
+    if(e.slow>0){ ctx.strokeStyle=hexA('#7db8ff',.8); ctx.lineWidth=2; ctx.beginPath(); ctx.arc(e.x,e.y+bob,e.r+2,0,7); ctx.stroke(); }
     // hp bar
     const w=e.r*2.2, hpf=clamp(e.hp/e.maxhp,0,1), by=e.y-e.r-(e.boss?14:9);
     ctx.fillStyle='rgba(0,0,0,.55)'; rrect(ctx,e.x-w/2,by,w,4.5,2); ctx.fill();
