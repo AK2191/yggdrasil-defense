@@ -76,6 +76,9 @@
     display:flex;align-items:center;gap:6px}
   #settingsBtn{position:fixed;top:calc(72px + var(--safe-t));left:8px;z-index:17;background:var(--panel);
     border:1px solid var(--line);border-radius:12px;width:38px;height:38px;padding:0}
+  #minimap{position:fixed;top:calc(72px + var(--safe-t));right:8px;z-index:17;width:98px;height:98px;
+    border:1px solid var(--line);border-radius:12px;background:rgba(8,16,24,.88);
+    box-shadow:0 6px 18px rgba(0,0,0,.4);display:none}
   .setRow{display:flex;align-items:center;justify-content:space-between;padding:13px 2px;border-bottom:1px solid var(--line);font-weight:700;font-size:15px}
   .setRow input[type=checkbox]{width:46px;height:27px;appearance:none;-webkit-appearance:none;background:rgba(120,140,160,.3);
     border-radius:999px;position:relative;transition:.15s;flex:0 0 auto}
@@ -114,6 +117,7 @@
 <canvas id="gl"></canvas>
 <div id="fps"></div>
 <div id="ownedRunes"></div>
+<canvas id="minimap" width="196" height="196"></canvas>
 <div id="weatherChip" class="hidden"></div>
 <button id="settingsBtn" aria-label="Einstellungen"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#cfe0ea" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" stroke-linecap="round"/></svg></button>
 
