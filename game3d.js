@@ -7,7 +7,7 @@
 const $=id=>document.getElementById(id);
 
 // ---------- board / rules (mirrors 2D) ----------
-const COLS=22, ROWS=22;
+const COLS=36, ROWS=36;
 const T_GROUND=0, T_TOWER=1, T_BLOCK=2, T_SPAWN=3, T_BASE=4, T_TREE=5, T_VEIN=6, T_BUILDING=7, T_WALL=8;
 const TOWERS={
   einherjar:{name:'Einherjar',cost:60, wood:15,color:0x8fd6a0,range:2.6,dmg:14,rate:0.55,bspeed:11,unlock:0},
@@ -92,8 +92,11 @@ function newGame(){
      dist:new Int32Array(COLS*ROWS),flow:new Int8Array(COLS*ROWS*2),
      enemies:[],bullets:[],gold:230,wood:100,lives:diff.lives,wave:0,score:0,kills:0,
      trees:{},veins:{},buildings:[],workers:[],mines:[],walls:{},
-     mods:{dmg:1,range:1,rate:1,gold:1,sell:0.6,discount:1,interest:0,splash:0,slow:0,slowT:0.8},
+     mods:{dmg:1,range:1,rate:1,gold:1,sell:0.6,discount:1,interest:0,splash:0,slow:0,slowT:0.8,
+       woodYield:6,mineYield:0,wallHp:0,wSpeed:1},
      runes:{},awaitingRune:false,
+     tech:{done:[],cur:null,prog:0},
+     buildTimer:50,
      weather:WEATHERS.clear,weatherKey:'clear',
      fx:{rateMul:1,rateT:0,espdMul:1,espdT:0,dmgMul:1,dmgT:0},
      eventTimer:0,nextEventAt:13,
@@ -111,19 +114,19 @@ function newGame(){
 function scatterResources(){
   const midR=ROWS>>1;
   const ok=(c,r)=>inB(c,r)&&G.grid[idx(c,r)]===T_GROUND&&Math.abs(r-midR)>1&&c>1&&c<COLS-2;
-  // 8 tree clusters
-  for(let k=0;k<8;k++){
+  // 16 tree clusters (big map)
+  for(let k=0;k<16;k++){
     const cc=2+((Math.random()*(COLS-4))|0), cr=2+((Math.random()*(ROWS-4))|0);
-    const n=4+((Math.random()*4)|0);
+    const n=5+((Math.random()*5)|0);
     for(let t=0;t<n;t++){
-      const c=cc+((Math.random()*4)|0)-2, r=cr+((Math.random()*4)|0)-2;
+      const c=cc+((Math.random()*5)|0)-2, r=cr+((Math.random()*5)|0)-2;
       if(!ok(c,r))continue;
       const i=idx(c,r); G.grid[i]=T_TREE; G.trees[i]={hp:4};
     }
   }
-  // 5 gold veins
+  // 9 gold veins
   let placed=0,guard=0;
-  while(placed<5&&guard++<200){
+  while(placed<9&&guard++<400){
     const c=2+((Math.random()*(COLS-4))|0), r=2+((Math.random()*(ROWS-4))|0);
     if(!ok(c,r))continue;
     const i=idx(c,r); G.grid[i]=T_VEIN; G.veins[i]={mine:null}; placed++;
@@ -169,7 +172,8 @@ function pathOK(){return G.dist[idx(G.spawn.c,G.spawn.r)]>=0;}
 //  THREE SCENE
 // ============================================================
 let renderer,scene,camera,sun,hemi;
-const cam={tx:0,tz:0,dist:16,min:8,max:26,tilt:0.95};
+const cam={tx:0,tz:0,dist:14,min:7,max:38,tilt:0.95,targetDist:14};
+let panVX=0,panVZ=0;   // camera glide (inertia)
 function glowTexture(){
   const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');
   const g=x.createRadialGradient(32,32,0,32,32,32);
@@ -196,15 +200,15 @@ function initThree(){
   renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=0.72;
   scene=new THREE.Scene();
   scene.background=new THREE.Color(0x060b12);
-  scene.fog=new THREE.Fog(0x060b12,20,42);
+  scene.fog=new THREE.Fog(0x060b12,26,66);
   camera=new THREE.PerspectiveCamera(52,innerWidth/innerHeight,0.1,120);
   GLOWTEX=glowTexture(); WHITETEX=whiteTexture();
   hemi=new THREE.HemisphereLight(0x2c4258,0x05080c,0.5);
   scene.add(hemi);
   sun=new THREE.DirectionalLight(0xcfe0f2,0.85);  // cold moonlight
-  sun.position.set(-9,16,7); sun.castShadow=true;
-  sun.shadow.mapSize.set(1024,1024);
-  const sc=sun.shadow.camera; sc.left=-15;sc.right=15;sc.top=15;sc.bottom=-15;sc.far=50;
+  sun.position.set(-14,24,10); sun.castShadow=true;
+  sun.shadow.mapSize.set(2048,2048);
+  const sc=sun.shadow.camera; sc.left=-24;sc.right=24;sc.top=24;sc.bottom=-24;sc.far=80;
   scene.add(sun);
   window.addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight);
     camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
@@ -318,22 +322,39 @@ function buildBoard(){
   if(boardGroup) scene.remove(boardGroup);
   boardGroup=new THREE.Group();
   // under-plane
-  const up=new THREE.Mesh(new THREE.PlaneGeometry(COLS+14,ROWS+14), std(0x0a141d,{roughness:1}));
+  const up=new THREE.Mesh(new THREE.PlaneGeometry(COLS+20,ROWS+20), std(0x0a141d,{roughness:1}));
   up.rotation.x=-Math.PI/2; up.position.y=-0.09; up.receiveShadow=true; boardGroup.add(up);
-  // checker tiles (two instanced meshes)
-  const tileG=new THREE.BoxGeometry(0.96,0.12,0.96);
-  const matA=std(0x101f2c,{roughness:0.94}), matB=std(0x0c1822,{roughness:0.94});
-  const listA=[],listB=[];
+  // organic terrain: seamless tiles with per-instance noise coloring (no board-game grid)
+  const noise=(c,r,s)=>{ const n=Math.sin(c*12.9898+r*78.233+s*37.7)*43758.5453; return n-Math.floor(n); };
+  const tileG=new THREE.BoxGeometry(1.002,0.12,1.002);
+  const list=[];
   for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
     if(G.grid[idx(c,r)]===T_BLOCK) continue;
-    ((c+r)&1?listA:listB).push([c,r]);
+    list.push([c,r]);
   }
-  for(const [list,mat] of [[listA,matA],[listB,matB]]){
-    const im=new THREE.InstancedMesh(tileG,mat,list.length);
-    const m=new THREE.Matrix4();
-    list.forEach(([c,r],i)=>{ m.makeTranslation(tw(c),-0.06,tz(r)); im.setMatrixAt(i,m); });
-    im.receiveShadow=true; boardGroup.add(im);
+  const im=new THREE.InstancedMesh(tileG, std(0xffffff,{roughness:0.95}), list.length);
+  const m=new THREE.Matrix4();
+  const cBase=new THREE.Color(0x15242e), cMoss=new THREE.Color(0x1a2f22), cDark=new THREE.Color(0x0e1a22), col=new THREE.Color();
+  list.forEach(([c,r],i)=>{
+    m.makeTranslation(tw(c),-0.06,tz(r)); im.setMatrixAt(i,m);
+    // large mossy patches + fine grain
+    const patch=noise((c/5)|0,(r/5)|0,1), grain=noise(c,r,2);
+    col.copy(cBase).lerp(cMoss,patch*0.75).lerp(cDark,grain*0.35);
+    im.setColorAt(i,col);
+  });
+  im.receiveShadow=true; boardGroup.add(im);
+  // grass tufts
+  const tuftN=Math.min(list.length,380);
+  const tuft=new THREE.InstancedMesh(new THREE.ConeGeometry(0.05,0.16,5), std(0x2f5c38,{roughness:0.9}), tuftN);
+  const q2=new THREE.Quaternion(), e2=new THREE.Euler(), s2=new THREE.Vector3(), p2=new THREE.Vector3();
+  for(let i=0;i<tuftN;i++){
+    const [c,r]=list[(Math.random()*list.length)|0];
+    e2.set((Math.random()-0.5)*0.4,Math.random()*3,(Math.random()-0.5)*0.4); q2.setFromEuler(e2);
+    const sc2=0.6+Math.random()*0.9; s2.set(sc2,sc2,sc2);
+    p2.set(tw(c)+(Math.random()-0.5)*0.7,0.06,tz(r)+(Math.random()-0.5)*0.7);
+    m.compose(p2,q2,s2); tuft.setMatrixAt(i,m);
   }
+  boardGroup.add(tuft);
   // rocks
   const rocks=[]; for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++) if(G.grid[idx(c,r)]===T_BLOCK) rocks.push([c,r]);
   const rockIM=new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.42,0), std(0x2a343e,{roughness:0.92,flatShading:true}), rocks.length);
@@ -604,8 +625,10 @@ function goldMul(){return G.mods.gold*G.diff.gold;}
 function towerCost(k){ const d=TOWERS[k]; return d?Math.round(d.cost*G.mods.discount):BUILDINGS[k].cost; }
 function woodCost(k){ return (TOWERS[k]||BUILDINGS[k]).wood||0; }
 function canAfford(k){ return G.gold>=towerCost(k)&&G.wood>=woodCost(k); }
-function startWave(){
+function startWave(early){
   if(G.waveActive||G.over)return;
+  if(early&&G.buildTimer>3){ const bn=15+G.wave*2; G.gold+=bn; banner('Früh gestartet · +'+bn+' Gold'); }
+  G.buildTimer=0;
   G.wave++; G.spawnQueue=waveComposition(G.wave); G.spawnTimer=0; G.waveActive=true;
   G.weatherKey=rollWeather(); G.weather=WEATHERS[G.weatherKey]; updateWeatherChip();
   G.eventTimer=0; G.nextEventAt=11+Math.random()*6;
@@ -697,6 +720,7 @@ function baseHit(e){
 }
 function endWave(){
   G.waveActive=false;
+  G.buildTimer=40;
   let bonus=30+G.wave*8;
   if(G.mods.interest>0) bonus+=Math.round(G.gold*G.mods.interest);
   G.gold+=bonus;
@@ -729,7 +753,8 @@ function tryBuild(c,r){
     const mesh=makePalisade(); mesh.position.set(tw(c),0,tz(r));
     mesh.rotation.y=(Math.random()<0.5?0:Math.PI/2)+(Math.random()-0.5)*0.1;
     scene.add(mesh);
-    G.walls[i]={hp:BUILDINGS.palisade.hp,maxhp:BUILDINGS.palisade.hp,mesh};
+    const whp=BUILDINGS.palisade.hp+G.mods.wallHp;
+    G.walls[i]={hp:whp,maxhp:whp,mesh};
     burst(tw(c),0.4,tz(r),0x8a6a40,8,2);
     vib(12); sfx('place'); updateHUD(); return;
   }
@@ -803,7 +828,7 @@ function updateWorkers(dt){
     const moveTo=(x,z,arrive)=>{
       const dx=x-m.position.x, dz=z-m.position.z, d=Math.hypot(dx,dz);
       if(d<0.22){ arrive(); return; }
-      const s=1.55*dt;
+      const s=1.55*G.mods.wSpeed*dt;
       m.position.x+=dx/d*s; m.position.z+=dz/d*s;
       m.rotation.y=-Math.atan2(dz,dx)+Math.PI/2;
       m.position.y=Math.abs(Math.sin(w.anim*1.6))*0.05;
@@ -842,7 +867,7 @@ function updateWorkers(dt){
       }
       case 'return':
         moveTo(w.home.x,w.home.z+0.35,()=>{
-          G.wood+=6; w.carry=false; m.userData.log.visible=false;
+          G.wood+=G.mods.woodYield; w.carry=false; m.userData.log.visible=false;
           burst(w.home.x,0.5,w.home.z,0xc8934a,4,1.4);
           w.state='idle'; w.timer=0.2; updateHUD();
         });
@@ -850,6 +875,67 @@ function updateWorkers(dt){
     }
   }
 }
+// ============================================================
+//  RESEARCH — tech tree (GDD Module 14), 3 tiers
+// ============================================================
+const TECHS=[
+  {id:'sharp', tier:1,name:'Schärfere Pfeile', desc:'+12% Turmschaden',            gold:60, wood:20, time:22, apply:m=>m.dmg*=1.12},
+  {id:'axes',  tier:1,name:'Bessere Äxte',     desc:'Zwerge bringen +3 Holz',      gold:40, wood:0,  time:18, apply:m=>m.woodYield+=3},
+  {id:'mason', tier:1,name:'Steinverstärkung', desc:'Neue Palisaden +70 HP',       gold:30, wood:30, time:18, apply:m=>m.wallHp+=70},
+  {id:'metal', tier:2,name:'Metallurgie',      desc:'+15% Schaden, +10% Feuerrate',gold:120,wood:40, time:32, apply:m=>{m.dmg*=1.15;m.rate*=0.9;}},
+  {id:'smelt', tier:2,name:'Goldschmelze',     desc:'Minen fördern +2 Gold',       gold:100,wood:30, time:28, apply:m=>m.mineYield+=2},
+  {id:'boots', tier:2,name:'Flinke Stiefel',   desc:'Zwerge +30% Tempo',           gold:80, wood:20, time:24, apply:m=>m.wSpeed*=1.3},
+  {id:'yggd',  tier:3,name:'Yggdrasil-Rune',   desc:'+20% Schaden & +10% Reichweite',gold:250,wood:80,time:42, apply:m=>{m.dmg*=1.2;m.range*=1.1;}},
+  {id:'horn',  tier:3,name:'Heimdalls Horn',   desc:'Langhaus +8 Leben',           gold:180,wood:50, time:36, apply:m=>{G.lives=Math.min(40,G.lives+8);}},
+];
+function techAvailable(t){
+  if(G.tech.done.includes(t.id))return false;
+  if(t.tier===1)return true;
+  return TECHS.filter(x=>x.tier===t.tier-1&&G.tech.done.includes(x.id)).length>=1;
+}
+function tickResearch(dt){
+  const cur=G.tech.cur; if(!cur)return;
+  const t=TECHS.find(x=>x.id===cur); if(!t){G.tech.cur=null;return;}
+  G.tech.prog+=dt;
+  if(G.tech.prog>=t.time){
+    G.tech.done.push(t.id); G.tech.cur=null; G.tech.prog=0;
+    t.apply(G.mods);
+    banner('Forschung abgeschlossen: '+t.name); sfx('rune'); vib(20);
+    updateHUD();
+    if(!$('techScreen').classList.contains('hidden')) renderTech();
+  }
+}
+function startResearch(t){
+  if(G.tech.cur){ banner('Es läuft bereits eine Forschung'); return; }
+  if(!techAvailable(t))return;
+  if(G.gold<t.gold||G.wood<t.wood){ banner('Zu teuer: '+t.gold+' Gold, '+t.wood+' Holz'); return; }
+  G.gold-=t.gold; G.wood-=t.wood;
+  G.tech.cur=t.id; G.tech.prog=0;
+  banner('Forschung gestartet: '+t.name); sfx('place'); vib(12);
+  updateHUD(); renderTech();
+}
+function renderTech(){
+  const box=$('techList'); box.innerHTML='';
+  for(const t of TECHS){
+    const done=G.tech.done.includes(t.id);
+    const running=G.tech.cur===t.id;
+    const avail=techAvailable(t)&&!running;
+    const locked=!done&&!running&&!avail;
+    const el=document.createElement('div');
+    el.className='techrow'+(done?' done':locked?' locked':'');
+    const prog=running?Math.min(100,G.tech.prog/t.time*100):0;
+    el.innerHTML=`<div class="t-tier">${'I'.repeat(t.tier)}</div>
+      <div class="t-main"><div class="t-nm">${t.name}</div><div class="t-desc">${t.desc}</div>
+      ${running?`<div class="t-bar"><div style="width:${prog}%"></div></div>`:''}</div>
+      <div class="t-cost">${done?'✓':running?Math.ceil(t.time-G.tech.prog)+'s':locked?'—':
+        `<span class="cg">${t.gold}</span> <span class="cw">${t.wood}</span>`}</div>`;
+    if(avail) el.addEventListener('click',()=>startResearch(t));
+    box.appendChild(el);
+  }
+}
+$('techBtn').addEventListener('click',()=>{ renderTech(); $('techScreen').classList.remove('hidden'); });
+$('techClose').addEventListener('click',()=>$('techScreen').classList.add('hidden'));
+
 // ---------- repair ----------
 function repairCost(o){ return Math.ceil((o.maxhp-o.hp)*0.08); }
 function repairStructure(o,label){
@@ -896,7 +982,7 @@ function updateMines(dt){
     mn.timer+=dt;
     if(mn.timer>=def.rate){
       mn.timer=0;
-      G.gold+=def.yield;
+      G.gold+=def.yield+G.mods.mineYield;
       burst(mn.x,0.6,mn.z,0xffd25a,4,1.4);
       updateHUD();
     }
@@ -1023,7 +1109,7 @@ function updateHUD(){
   $('uiWave').textContent=G.wave;
   $('uiScore').textContent=Math.floor(G.score);
   const wb=$('waveBtn'); wb.disabled=G.waveActive;
-  wb.textContent=G.waveActive?'Welle '+G.wave+'…':'▶︎ Welle '+(G.wave+1);
+  wb.textContent=G.waveActive?'Welle '+G.wave+' läuft…':'Welle '+(G.wave+1)+' in '+Math.max(0,Math.ceil(G.buildTimer))+'s · Jetzt!';
   document.querySelectorAll('.twr').forEach(el=>{
     const k=el.dataset.k, def=TOWERS[k]||BUILDINGS[k], locked=G.wave<(def.unlock||0);
     el.classList.toggle('locked',locked||!canAfford(k));
@@ -1068,12 +1154,15 @@ cv.addEventListener('pointermove',e=>{
   const prev=ptr.get(e.pointerId), nx=e.clientX, ny=e.clientY;
   if(ptr.size===2){ const p=[...ptr.values()];
     const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)||1;
-    cam.dist=clamp(dist0*(pinch0/d),cam.min,cam.max);
+    cam.targetDist=clamp(dist0*(pinch0/d),cam.min,cam.max);
   } else if(ptr.size===1){
     if(Math.hypot(nx-dx0,ny-dy0)>12)moved=true;
     if(moved){ const k=cam.dist/700;
-      cam.tx=clamp(cam.tx-(nx-prev.x)*k,-COLS/2,COLS/2);
-      cam.tz=clamp(cam.tz-(ny-prev.y)*k*1.4,-ROWS/2,ROWS/2); }
+      const dxw=-(nx-prev.x)*k, dzw=-(ny-prev.y)*k*1.4;
+      cam.tx=clamp(cam.tx+dxw,-COLS/2,COLS/2);
+      cam.tz=clamp(cam.tz+dzw,-ROWS/2,ROWS/2);
+      panVX=dxw*38; panVZ=dzw*38;   // capture velocity for glide
+    }
   }
   ptr.set(e.pointerId,{x:nx,y:ny});
 });
@@ -1083,7 +1172,15 @@ function endP(e){
 }
 cv.addEventListener('pointerup',endP);
 cv.addEventListener('pointercancel',e=>ptr.delete(e.pointerId));
-cv.addEventListener('wheel',e=>{ e.preventDefault(); cam.dist=clamp(cam.dist*(e.deltaY>0?1.1:0.9),cam.min,cam.max); },{passive:false});
+cv.addEventListener('wheel',e=>{ e.preventDefault(); cam.targetDist=clamp(cam.targetDist*(e.deltaY>0?1.12:0.9),cam.min,cam.max); },{passive:false});
+function updateCameraSmooth(dt){
+  cam.dist+=(cam.targetDist-cam.dist)*Math.min(1,dt*9);
+  if(ptr.size===0&&(Math.abs(panVX)>0.01||Math.abs(panVZ)>0.01)){
+    cam.tx=clamp(cam.tx+panVX*dt,-COLS/2,COLS/2);
+    cam.tz=clamp(cam.tz+panVZ*dt,-ROWS/2,ROWS/2);
+    const d=Math.pow(0.03,dt); panVX*=d; panVZ*=d;
+  }
+}
 const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0), hitP=new THREE.Vector3();
 function tap(sx,sy){
   if(!G.running||G.over)return;
@@ -1242,7 +1339,8 @@ function serializeRun(){
     trees:Object.keys(G.trees).map(i=>[+i,G.trees[i].hp]),
     veins:Object.keys(G.veins).map(i=>[+i,G.veins[i].mine?1:0]),
     builds:G.buildings.map(b=>[b.i,b.hp]),
-    walls:Object.keys(G.walls).map(i=>[+i,G.walls[i].hp])};
+    walls:Object.keys(G.walls).map(i=>[+i,G.walls[i].hp]),
+    tech:G.tech.done};
 }
 function saveRun(){ const s=serializeRun(); if(s)try{localStorage.setItem('ygg3d_save',JSON.stringify(s));}catch(e){} }
 function clearSave(){ try{localStorage.removeItem('ygg3d_save');}catch(e){} }
@@ -1279,10 +1377,12 @@ function resumeRun(){
   for(const [wi,whp] of (s.walls||[])){ const c=wi%COLS,r=(wi/COLS)|0;
     const m=makePalisade(); m.position.set(tw(c),0,tz(r)); scene.add(m);
     G.walls[wi]={hp:whp,maxhp:BUILDINGS.palisade.hp,mesh:m}; }
+  G.tech={done:s.tech||[],cur:null,prog:0};
+  G.buildTimer=35;
   computeFlow(); buildBoard(); buildRow(); refreshRow(); updateOwnedRunes(); updateWeatherChip();
   for(const b of G.buildings) spawnWorkers(b);
   initAudio();
-  G.running=true; cam.tx=0;cam.tz=0;cam.dist=17;
+  G.running=true; cam.tx=tw(G.base.c)-5; cam.tz=0; cam.dist=13; cam.targetDist=13;
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('runeScreen').classList.add('hidden');
   banner('Fortgesetzt — Welle '+G.wave);
 }
@@ -1308,7 +1408,7 @@ function clearScene3D(){
 }
 
 // ---------- buttons / flow ----------
-$('waveBtn').addEventListener('click',startWave);
+$('waveBtn').addEventListener('click',()=>startWave(true));
 $('pauseBtn').addEventListener('click',()=>{ G.paused=!G.paused; $('pauseBtn').textContent=G.paused?'▶︎':'⏸︎'; });
 $('speedBtn').addEventListener('click',()=>{ G.speed=G.speed===1?2:G.speed===2?3:1; $('speedBtn').textContent=G.speed+'×'; });
 function gameOver(){
@@ -1326,7 +1426,7 @@ function startGame(){
   clearScene3D(); clearSave();
   newGame(); buildBoard(); buildRow(); updateHUD();
   updateOwnedRunes(); updateWeatherChip(); initAudio();
-  cam.tx=0; cam.tz=0; cam.dist=17;
+  cam.tx=tw(G.base.c)-5; cam.tz=0; cam.dist=13; cam.targetDist=13;
   G.running=true;
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('runeScreen').classList.add('hidden');
   banner('Baue Türme · dann Welle starten');
@@ -1335,7 +1435,7 @@ $('playBtn').addEventListener('click',startGame);
 $('againBtn').addEventListener('click',startGame);
 
 // ---------- main loop ----------
-let last=performance.now(),fa=0,fn=0;
+let last=performance.now(),fa=0,fn=0,hudTick=0;
 function loop(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
   fa+=dt; fn++;
@@ -1356,12 +1456,27 @@ function loop(now){
         triggerEvent(); G.eventTimer=0; G.nextEventAt=12+Math.random()*7;
       }
     }
+    // real-time pacing: next wave auto-starts after the build phase
+    if(!G.waveActive&&!G.awaitingRune){
+      G.buildTimer-=dt*G.speed;
+      if(G.buildTimer<=0) startWave(false);
+    }
+    // research progress
+    tickResearch(dt*G.speed);
+    // live wave-button countdown
+    hudTick+=dt;
+    if(hudTick>=0.25){ hudTick=0;
+      const wb=$('waveBtn');
+      if(G.waveActive){ wb.disabled=true; wb.textContent='Welle '+G.wave+' läuft…'; }
+      else { wb.disabled=false; wb.textContent='Welle '+(G.wave+1)+' in '+Math.max(0,Math.ceil(G.buildTimer))+'s · Jetzt!'; }
+    }
   }
   if(spawnRing){ spawnRing.rotation.z=secs*1.5; spawnRing.scale.setScalar(1+Math.sin(secs*3)*0.08); }
   if(baseGroup) baseGroup.rotation.y=Math.sin(secs*0.6)*0.04;
   updateBursts(dt);
   updateArcs(dt);
   updateDayNight(dt);
+  updateCameraSmooth(dt);
   updateCamera();
   renderer.render(scene,camera);
   requestAnimationFrame(loop);
