@@ -23,6 +23,14 @@ Weltenschlange), Raycast-Tap-Bauen — plus **Runen-Roguelite, Wetter mit 3D-Par
 Schwierigkeitsgrade, Sound, Auto-Save/Fortsetzen und Bestwert**.
 Die klassische 2D-Version bleibt unter **`/2d/`** spielbar (Link auf dem Startbildschirm).
 
+## 🌲 Basis-Aufbau & Wirtschaft (Age-of-Darkness-Stil)
+Die 3D-Version ist jetzt ein Survival-Basisbauer: **Tannenwälder** wachsen auf der Karte
+(blockieren Gegner — Abholzen öffnet neue Angriffswege!), **Goldadern** warten im Fels.
+Baue eine **Holzfäller-Hütte** und ihre **Zwergen-Arbeiter** laufen selbstständig zum
+nächsten Baum, hacken ihn sichtbar um und tragen das Holz heim (GDD-Modul 09, Autobuilder).
+Baue **Goldminen** auf Adern für passives Einkommen (GDD-Modul 04). Türme kosten
+**Gold + Holz** — die Wirtschaft trägt die Verteidigung.
+
 ## 🎮 Was drin ist (aktueller Stand)
 
 Dies ist der spielbare **Kern-Loop** — im GDD die Module **01–08**, dort als *„Spielbar!"* markiert:

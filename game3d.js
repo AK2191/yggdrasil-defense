@@ -8,13 +8,18 @@ const $=id=>document.getElementById(id);
 
 // ---------- board / rules (mirrors 2D) ----------
 const COLS=22, ROWS=22;
-const T_GROUND=0, T_TOWER=1, T_BLOCK=2, T_SPAWN=3, T_BASE=4;
+const T_GROUND=0, T_TOWER=1, T_BLOCK=2, T_SPAWN=3, T_BASE=4, T_TREE=5, T_VEIN=6, T_BUILDING=7;
 const TOWERS={
-  einherjar:{name:'Einherjar',cost:60, color:0x8fd6a0,range:2.6,dmg:14,rate:0.55,bspeed:11,unlock:0},
-  runestein:{name:'Runestein',cost:85, color:0x7db8ff,range:2.4,dmg:7, rate:0.9, bspeed:9, slow:0.45,slowT:1.4,unlock:0},
-  walkure:{ name:'Walküre',  cost:120,color:0xffe27a,range:2.3,dmg:9, rate:0.16,bspeed:14,unlock:2},
-  mjolnir:{ name:'Mjölnir',  cost:160,color:0xff9d5a,range:2.5,dmg:34,rate:1.25,bspeed:10,splash:1.4,unlock:4},
-  bifrost:{ name:'Bifröst',  cost:210,color:0xc88fff,range:5.2,dmg:80,rate:1.9, bspeed:20,unlock:6},
+  einherjar:{name:'Einherjar',cost:60, wood:15,color:0x8fd6a0,range:2.6,dmg:14,rate:0.55,bspeed:11,unlock:0},
+  runestein:{name:'Runestein',cost:85, wood:20,color:0x7db8ff,range:2.4,dmg:7, rate:0.9, bspeed:9, slow:0.45,slowT:1.4,unlock:0},
+  walkure:{ name:'Walküre',  cost:120,wood:25,color:0xffe27a,range:2.3,dmg:9, rate:0.16,bspeed:14,unlock:2},
+  mjolnir:{ name:'Mjölnir',  cost:160,wood:35,color:0xff9d5a,range:2.5,dmg:34,rate:1.25,bspeed:10,splash:1.4,unlock:4},
+  bifrost:{ name:'Bifröst',  cost:210,wood:40,color:0xc88fff,range:5.2,dmg:80,rate:1.9, bspeed:20,unlock:6},
+};
+// economy buildings (Age-of-Darkness-style base building — GDD Module 04+09)
+const BUILDINGS={
+  lumber:{ name:'Holzfäller', cost:90, wood:0,  color:0xc8934a, unlock:0, radius:5.5, workers:2 },
+  goldmine:{name:'Goldmine',  cost:0,  wood:60, color:0xfbbf24, unlock:0, rate:3.5, yield:3 },
 };
 const ENEMIES={
   draugr:   {name:'Draugr',    hp:34, speed:1.15,reward:6,  r:0.40},
@@ -83,7 +88,8 @@ function newGame(){
   const diff=DIFFS[selDiff]||DIFFS.normal;
   G={diff,diffKey:selDiff,grid:new Uint8Array(COLS*ROWS),tower:new Array(COLS*ROWS).fill(null),
      dist:new Int32Array(COLS*ROWS),flow:new Int8Array(COLS*ROWS*2),
-     enemies:[],bullets:[],gold:230,lives:diff.lives,wave:0,score:0,kills:0,
+     enemies:[],bullets:[],gold:230,wood:100,lives:diff.lives,wave:0,score:0,kills:0,
+     trees:{},veins:{},buildings:[],workers:[],mines:[],
      mods:{dmg:1,range:1,rate:1,gold:1,sell:0.6,discount:1,interest:0,splash:0,slow:0,slowT:0.8},
      runes:{},awaitingRune:false,
      weather:WEATHERS.clear,weatherKey:'clear',
@@ -96,7 +102,30 @@ function newGame(){
   for(let r=0;r<ROWS;r++){G.grid[idx(0,r)]=T_BLOCK;G.grid[idx(COLS-1,r)]=T_BLOCK;}
   G.grid[idx(G.spawn.c,G.spawn.r)]=T_SPAWN; G.grid[idx(G.base.c,G.base.r)]=T_BASE;
   for(const [c,r] of [[6,6],[6,7],[15,15],[15,14],[11,4],[10,17]]) if(G.grid[idx(c,r)]===T_GROUND) G.grid[idx(c,r)]=T_BLOCK;
+  scatterResources();
   computeFlow();
+}
+// forests + gold veins (kept off the spawn-to-base corridor so a path always exists)
+function scatterResources(){
+  const midR=ROWS>>1;
+  const ok=(c,r)=>inB(c,r)&&G.grid[idx(c,r)]===T_GROUND&&Math.abs(r-midR)>1&&c>1&&c<COLS-2;
+  // 8 tree clusters
+  for(let k=0;k<8;k++){
+    const cc=2+((Math.random()*(COLS-4))|0), cr=2+((Math.random()*(ROWS-4))|0);
+    const n=4+((Math.random()*4)|0);
+    for(let t=0;t<n;t++){
+      const c=cc+((Math.random()*4)|0)-2, r=cr+((Math.random()*4)|0)-2;
+      if(!ok(c,r))continue;
+      const i=idx(c,r); G.grid[i]=T_TREE; G.trees[i]={hp:4};
+    }
+  }
+  // 5 gold veins
+  let placed=0,guard=0;
+  while(placed<5&&guard++<200){
+    const c=2+((Math.random()*(COLS-4))|0), r=2+((Math.random()*(ROWS-4))|0);
+    if(!ok(c,r))continue;
+    const i=idx(c,r); G.grid[i]=T_VEIN; G.veins[i]={mine:null}; placed++;
+  }
 }
 function walk(c,r){ if(!inB(c,r))return false; const t=G.grid[idx(c,r)]; return t===T_GROUND||t===T_SPAWN||t===T_BASE; }
 function computeFlow(){
@@ -267,6 +296,18 @@ function buildBoard(){
     const sc=0.75+Math.random()*0.5; s.set(sc,sc*(0.7+Math.random()*0.4),sc); p.set(tw(c),0.18,tz(r));
     m4.compose(p,q,s); rockIM.setMatrixAt(i,m4); });
   rockIM.castShadow=true; rockIM.receiveShadow=true; boardGroup.add(rockIM);
+  // forests
+  for(const i in G.trees){ const c=i%COLS,r=(i/COLS)|0;
+    const m=makeTree(); m.position.set(tw(c),0,tz(r));
+    m.rotation.y=Math.random()*6; const s=0.4+0.15*G.trees[i].hp; m.scale.setScalar(s);
+    G.trees[i].mesh=m; boardGroup.add(m); }
+  // gold veins (+ mines if built)
+  for(const i in G.veins){ const c=i%COLS,r=(i/COLS)|0;
+    const m=makeVein(); m.position.set(tw(c),0,tz(r)); m.rotation.y=Math.random()*6;
+    G.veins[i].mesh=m; boardGroup.add(m);
+    if(G.veins[i].mine){ const mm=makeMine(); mm.position.set(tw(c),0,tz(r)); boardGroup.add(mm); } }
+  // lumber huts
+  for(const b of G.buildings){ const m=makeHut(); m.position.set(b.x,0,b.z); boardGroup.add(m); }
   // base keep
   baseGroup=new THREE.Group();
   const keep=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.5,0.62,8), std(0x9fb6a8,{roughness:0.7}));
@@ -290,6 +331,65 @@ function buildBoard(){
     new THREE.MeshBasicMaterial({color:0x4ade80,transparent:true,opacity:0.55,side:THREE.DoubleSide}));
   rangeRing.rotation.x=-Math.PI/2; rangeRing.position.y=0.02; rangeRing.visible=false; boardGroup.add(rangeRing);
   scene.add(boardGroup);
+}
+
+// ---------- resource / building models ----------
+function makeTree(){
+  const g=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.09,0.32,7), std(0x5a3a1e,{roughness:0.9}));
+  trunk.position.y=0.16; trunk.castShadow=true; g.add(trunk);
+  const c1=std(0x1e4d2b,{roughness:0.85}), c2=std(0x2a6339,{roughness:0.85});
+  const l1=new THREE.Mesh(new THREE.ConeGeometry(0.34,0.5,8),c1); l1.position.y=0.5; l1.castShadow=true; g.add(l1);
+  const l2=new THREE.Mesh(new THREE.ConeGeometry(0.26,0.42,8),c2); l2.position.y=0.78; l2.castShadow=true; g.add(l2);
+  const l3=new THREE.Mesh(new THREE.ConeGeometry(0.16,0.32,8),c1); l3.position.y=1.02; l3.castShadow=true; g.add(l3);
+  return g;
+}
+function makeVein(){
+  const g=new THREE.Group();
+  const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.34,0), std(0x4a4038,{roughness:0.9,flatShading:true}));
+  rock.position.y=0.2; rock.scale.y=0.75; rock.castShadow=true; g.add(rock);
+  const nug=std(0xffd25a,{emissive:0xdfa73a,emissiveIntensity:0.9,metalness:0.8,roughness:0.3});
+  for(const [x,y,z] of [[0.12,0.34,0.08],[-0.14,0.28,-0.06],[0.02,0.42,-0.12],[-0.05,0.2,0.18]]){
+    const n=new THREE.Mesh(new THREE.DodecahedronGeometry(0.07,0),nug); n.position.set(x,y,z); g.add(n); }
+  return g;
+}
+function makeHut(){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.66,0.4,0.56), std(0x6e4a26,{roughness:0.85}));
+  body.position.y=0.2; body.castShadow=true; g.add(body);
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(0.55,0.4,4), std(0x4a2f16,{roughness:0.9}));
+  roof.position.y=0.6; roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
+  const win=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.02), std(0xffd25a,{emissive:0xffb03a,emissiveIntensity:1.4}));
+  win.position.set(0.14,0.24,0.29); g.add(win);
+  const logs=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.4,6), std(0x8a5a30));
+  logs.rotation.z=Math.PI/2; logs.position.set(-0.42,0.08,0.1); g.add(logs);
+  return g;
+}
+function makeMine(){
+  const g=new THREE.Group();
+  for(const s of [-1,1]){ const beam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.5,0.08), std(0x6e4a26));
+    beam.position.set(s*0.26,0.25,0.22); beam.castShadow=true; g.add(beam); }
+  const top=new THREE.Mesh(new THREE.BoxGeometry(0.68,0.09,0.12), std(0x5a3a1e));
+  top.position.set(0,0.5,0.22); top.castShadow=true; g.add(top);
+  const hole=new THREE.Mesh(new THREE.BoxGeometry(0.44,0.3,0.05), std(0x0a0a0c));
+  hole.position.set(0,0.15,0.24); g.add(hole);
+  const gl=glowSprite(0xffd25a,0.9,0.4); gl.position.set(0,0.55,0.2); g.add(gl);
+  return g;
+}
+function makeDwarf(){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8), std(0x7a4a2a,{roughness:0.8}));
+  body.scale.y=1.25; body.position.y=0.15; body.castShadow=true; g.add(body);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.085,10,8), std(0xd8a077));
+  head.position.y=0.34; g.add(head);
+  const beard=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,6), std(0xe8e0d0));
+  beard.position.set(0.05,0.28,0); beard.scale.set(1,1.2,0.9); g.add(beard);
+  const hat=new THREE.Mesh(new THREE.ConeGeometry(0.09,0.16,8), std(0xa03028));
+  hat.position.y=0.46; hat.castShadow=true; g.add(hat);
+  const log=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.3,6), std(0x8a5a30));
+  log.rotation.z=Math.PI/2; log.position.set(-0.02,0.42,0); log.visible=false; g.add(log);
+  g.userData.log=log;
+  return g;
 }
 
 // ---------- tower models ----------
@@ -429,7 +529,9 @@ function effDmg(t){return t.dmg*G.mods.dmg*G.weather.dmg*G.fx.dmgMul;}
 function effRate(t){return t.rate*G.mods.rate*G.weather.rate*G.fx.rateMul;}
 function effRange(t){return t.range*G.mods.range;}
 function goldMul(){return G.mods.gold*G.diff.gold;}
-function towerCost(k){return Math.round(TOWERS[k].cost*G.mods.discount);}
+function towerCost(k){ const d=TOWERS[k]; return d?Math.round(d.cost*G.mods.discount):BUILDINGS[k].cost; }
+function woodCost(k){ return (TOWERS[k]||BUILDINGS[k]).wood||0; }
+function canAfford(k){ return G.gold>=towerCost(k)&&G.wood>=woodCost(k); }
 function startWave(){
   if(G.waveActive||G.over)return;
   G.wave++; G.spawnQueue=waveComposition(G.wave); G.spawnTimer=0; G.waveActive=true;
@@ -508,19 +610,137 @@ function tryBuild(c,r){
   const i=idx(c,r);
   if(G.grid[i]===T_TOWER&&G.tower[i]){ openSheet(G.tower[i]); return; }
   closeSheet();
+  const cost=towerCost(G.selected), wcost=woodCost(G.selected);
+  // --- goldmine: only on a vein ---
+  if(G.selected==='goldmine'){
+    if(G.grid[i]!==T_VEIN||!G.veins[i]||G.veins[i].mine){ banner('Nur auf einer freien Goldader baubar'); return; }
+    if(G.wood<wcost){ banner('Nicht genug Holz'); return; }
+    G.wood-=wcost;
+    G.veins[i].mine={timer:0};
+    G.mines.push({i,x:tw(c),z:tz(r),timer:0});
+    const mm=makeMine(); mm.position.set(tw(c),0,tz(r)); boardGroup.add(mm);
+    burst(tw(c),0.5,tz(r),0xfbbf24,12,2.5);
+    banner('Goldmine errichtet'); vib(15); sfx('place'); updateHUD(); return;
+  }
+  // --- lumber hut ---
+  if(G.selected==='lumber'){
+    if(G.grid[i]!==T_GROUND){ banner('Hier kann nicht gebaut werden'); return; }
+    if(G.gold<cost){ banner('Nicht genug Gold'); return; }
+    G.grid[i]=T_BUILDING; computeFlow();
+    if(!pathOK()){ G.grid[i]=T_GROUND; computeFlow(); banner('Das würde den Pfad blockieren!'); return; }
+    G.gold-=cost;
+    const b={i,x:tw(c),z:tz(r)};
+    G.buildings.push(b);
+    const m=makeHut(); m.position.set(b.x,0,b.z); boardGroup.add(m);
+    spawnWorkers(b);
+    burst(b.x,0.4,b.z,0xc8934a,12,2.5);
+    banner('Holzfäller-Hütte errichtet — Zwerge an die Arbeit!'); vib(15); sfx('place'); updateHUD(); return;
+  }
+  // --- towers ---
   if(G.grid[i]!==T_GROUND){ banner('Hier kann nicht gebaut werden'); return; }
-  const def=TOWERS[G.selected], cost=towerCost(G.selected);
+  const def=TOWERS[G.selected];
   if(G.wave<def.unlock){ banner(def.name+' ab Welle '+def.unlock); return; }
   if(G.gold<cost){ banner('Nicht genug Gold'); return; }
+  if(G.wood<wcost){ banner('Nicht genug Holz'); return; }
   G.grid[i]=T_TOWER; computeFlow();
   if(!pathOK()){ G.grid[i]=T_GROUND; computeFlow(); banner('Das würde den Pfad blockieren!'); return; }
-  G.gold-=cost;
+  G.gold-=cost; G.wood-=wcost;
   const mesh=makeTower(G.selected); mesh.position.set(tw(c),0,tz(r)); scene.add(mesh);
   G.tower[i]={key:G.selected,c,r,x:tw(c),z:tz(r),def,level:1,dmg:def.dmg,range:def.range,rate:def.rate,
     cd:0,invested:cost,mesh,angle:0,recoil:0};
   burst(tw(c),0.4,tz(r),def.color,10,2.5);
   vib(15); sfx('place');
   updateHUD();
+}
+// ---------- dwarf workers (GDD Module 09 — autobuilder) ----------
+function spawnWorkers(b){
+  const def=BUILDINGS.lumber;
+  for(let k=0;k<def.workers;k++){
+    const mesh=makeDwarf(); scene.add(mesh);
+    mesh.position.set(b.x+(k?0.25:-0.25),0,b.z+0.35);
+    G.workers.push({mesh,home:b,state:'idle',tree:-1,timer:Math.random()*0.8,anim:Math.random()*6,carry:false});
+  }
+}
+function nearestTree(w){
+  const R=BUILDINGS.lumber.radius; let best=-1,bd=R*R;
+  for(const i in G.trees){ const t=G.trees[i]; if(!t||t.hp<=0)continue;
+    const c=i%COLS,r=(i/COLS)|0, dx=tw(c)-w.home.x, dz=tz(r)-w.home.z;
+    const d=dx*dx+dz*dz;
+    if(d<bd){bd=d;best=+i;} }
+  return best;
+}
+function depleteTree(i){
+  const t=G.trees[i]; if(!t)return;
+  if(t.mesh) boardGroup.remove(t.mesh);
+  delete G.trees[i];
+  G.grid[i]=T_GROUND;
+  computeFlow();   // clearing forest opens new paths
+}
+function updateWorkers(dt){
+  for(const w of G.workers){
+    w.anim+=dt*6;
+    const m=w.mesh;
+    const moveTo=(x,z,arrive)=>{
+      const dx=x-m.position.x, dz=z-m.position.z, d=Math.hypot(dx,dz);
+      if(d<0.22){ arrive(); return; }
+      const s=1.55*dt;
+      m.position.x+=dx/d*s; m.position.z+=dz/d*s;
+      m.rotation.y=-Math.atan2(dz,dx)+Math.PI/2;
+      m.position.y=Math.abs(Math.sin(w.anim*1.6))*0.05;
+    };
+    switch(w.state){
+      case 'idle':
+        w.timer-=dt;
+        m.position.y=Math.abs(Math.sin(w.anim*0.8))*0.02;
+        if(w.timer<=0){ w.timer=0.8;
+          const t=nearestTree(w);
+          if(t>=0){ w.tree=t; w.state='go'; } }
+        break;
+      case 'go': {
+        const tr=G.trees[w.tree];
+        if(!tr){ w.state='idle'; break; }
+        const c=w.tree%COLS, r=(w.tree/COLS)|0;
+        moveTo(tw(c),tz(r),()=>{ w.state='chop'; w.timer=1.5; });
+        break;
+      }
+      case 'chop': {
+        const tr=G.trees[w.tree];
+        if(!tr){ w.state='idle'; break; }
+        w.timer-=dt;
+        m.rotation.z=Math.sin(w.anim*3)*0.25;   // hacking wobble
+        if(w.timer<=0){
+          m.rotation.z=0;
+          tr.hp--;
+          const c=w.tree%COLS, r=(w.tree/COLS)|0;
+          burst(tw(c),0.4,tz(r),0xc8934a,6,1.8);
+          if(tr.mesh) tr.mesh.scale.setScalar(0.4+0.15*Math.max(0,tr.hp));
+          if(tr.hp<=0) depleteTree(w.tree);
+          w.carry=true; m.userData.log.visible=true;
+          w.state='return';
+        }
+        break;
+      }
+      case 'return':
+        moveTo(w.home.x,w.home.z+0.35,()=>{
+          G.wood+=6; w.carry=false; m.userData.log.visible=false;
+          burst(w.home.x,0.5,w.home.z,0xc8934a,4,1.4);
+          w.state='idle'; w.timer=0.2; updateHUD();
+        });
+        break;
+    }
+  }
+}
+function updateMines(dt){
+  const def=BUILDINGS.goldmine;
+  for(const mn of G.mines){
+    mn.timer+=dt;
+    if(mn.timer>=def.rate){
+      mn.timer=0;
+      G.gold+=def.yield;
+      burst(mn.x,0.6,mn.z,0xffd25a,4,1.4);
+      updateHUD();
+    }
+  }
 }
 function updateTowers(dt,now){
   for(const t of G.tower){ if(!t)continue;
@@ -626,36 +846,44 @@ $('shSellBtn').addEventListener('click',()=>{ const t=G.inspect; if(!t)return;
   computeFlow(); closeSheet(); updateHUD(); });
 
 // ---------- HUD ----------
+function costHtml(k){
+  const g=towerCost(k), w=woodCost(k);
+  return (g>0?`<span class="cg">${g}</span>`:'')+(w>0?`<span class="cw">${w}</span>`:'');
+}
 function updateHUD(){
   $('uiGold').textContent=Math.floor(G.gold);
+  $('uiWood').textContent=Math.floor(G.wood);
   $('uiLife').textContent=G.lives;
   $('uiWave').textContent=G.wave;
   $('uiScore').textContent=Math.floor(G.score);
   const wb=$('waveBtn'); wb.disabled=G.waveActive;
   wb.textContent=G.waveActive?'Welle '+G.wave+'…':'▶︎ Welle '+(G.wave+1);
   document.querySelectorAll('.twr').forEach(el=>{
-    const def=TOWERS[el.dataset.k], c=towerCost(el.dataset.k), locked=G.wave<def.unlock;
-    el.classList.toggle('locked',locked||G.gold<c);
+    const k=el.dataset.k, def=TOWERS[k]||BUILDINGS[k], locked=G.wave<(def.unlock||0);
+    el.classList.toggle('locked',locked||!canAfford(k));
     const cost=el.querySelector('.cost');
-    if(!locked) cost.textContent=c;
-    cost.classList.toggle('na',G.gold<c&&!locked);
+    if(!locked) cost.innerHTML=costHtml(k);
+    cost.classList.toggle('na',!canAfford(k)&&!locked);
   });
 }
+const ALL_KEYS=KEYS.concat(Object.keys(BUILDINGS));
 function buildRow(){
   const row=$('towerRow'); row.innerHTML='';
-  for(const k of KEYS){ const def=TOWERS[k];
+  for(const k of ALL_KEYS){ const def=TOWERS[k]||BUILDINGS[k];
     const el=document.createElement('div'); el.className='twr'+(k===G.selected?' sel':''); el.dataset.k=k;
     el.innerHTML=`<div class="dot" style="background:#${def.color.toString(16).padStart(6,'0')};color:#${def.color.toString(16).padStart(6,'0')}"></div>
-      <div class="nm">${def.name}</div><div class="cost">${def.cost}</div>`;
-    el.addEventListener('click',()=>{ if(G.wave<def.unlock){banner(def.name+' ab Welle '+def.unlock);return;}
-      G.selected=k; document.querySelectorAll('.twr').forEach(x=>x.classList.toggle('sel',x.dataset.k===k)); closeSheet(); });
+      <div class="nm">${def.name}</div><div class="cost">${costHtml(k)}</div>`;
+    el.addEventListener('click',()=>{ if(G.wave<(def.unlock||0)){banner(def.name+' ab Welle '+def.unlock);return;}
+      G.selected=k; document.querySelectorAll('.twr').forEach(x=>x.classList.toggle('sel',x.dataset.k===k)); closeSheet();
+      if(k==='goldmine')banner('Auf eine Goldader tippen');
+      if(k==='lumber')banner('Nahe an Bäumen platzieren'); });
     row.appendChild(el);
   }
   updateHUD();
 }
 function refreshRow(){
-  document.querySelectorAll('.twr').forEach(el=>{ const def=TOWERS[el.dataset.k];
-    el.querySelector('.nm').textContent=G.wave<def.unlock?'Welle '+def.unlock:def.name; });
+  document.querySelectorAll('.twr').forEach(el=>{ const def=TOWERS[el.dataset.k]||BUILDINGS[el.dataset.k];
+    el.querySelector('.nm').textContent=G.wave<(def.unlock||0)?'Welle '+def.unlock:def.name; });
   updateHUD();
 }
 let bnT=null;
@@ -841,8 +1069,11 @@ function serializeRun(){
   if(!G||G.over||G.wave<1)return null;
   const towers=[];
   for(const t of G.tower) if(t) towers.push({c:t.c,r:t.r,key:t.key,level:t.level,dmg:t.dmg,range:t.range,rate:t.rate,invested:t.invested});
-  return {v:1,grid:Array.from(G.grid),towers,gold:G.gold,lives:G.lives,wave:G.wave,score:G.score,kills:G.kills,
-    mods:G.mods,runes:G.runes,diffKey:G.diffKey};
+  return {v:2,grid:Array.from(G.grid),towers,gold:G.gold,wood:G.wood,lives:G.lives,wave:G.wave,score:G.score,kills:G.kills,
+    mods:G.mods,runes:G.runes,diffKey:G.diffKey,
+    trees:Object.keys(G.trees).map(i=>[+i,G.trees[i].hp]),
+    veins:Object.keys(G.veins).map(i=>[+i,G.veins[i].mine?1:0]),
+    builds:G.buildings.map(b=>b.i)};
 }
 function saveRun(){ const s=serializeRun(); if(s)try{localStorage.setItem('ygg3d_save',JSON.stringify(s));}catch(e){} }
 function clearSave(){ try{localStorage.removeItem('ygg3d_save');}catch(e){} }
@@ -863,8 +1094,18 @@ function resumeRun(){
       rate:tt.rate,cd:0,invested:tt.invested,mesh,angle:0,recoil:0};
     G.grid[i]=T_TOWER; }
   G.gold=s.gold;G.lives=s.lives;G.wave=s.wave;G.score=s.score;G.kills=s.kills;
+  G.wood=s.wood!=null?s.wood:100;
   Object.assign(G.mods,s.mods||{}); G.runes=s.runes||{};
+  // restore economy (saved grid is authoritative; rebuild resource maps from save)
+  G.trees={}; for(const [i,hp] of (s.trees||[])) G.trees[i]={hp};
+  G.veins={}; G.mines=[];
+  for(const [i,mined] of (s.veins||[])){ G.veins[i]={mine:mined?{timer:0}:null};
+    if(mined){ const c=i%COLS,r=(i/COLS)|0; G.mines.push({i,x:tw(c),z:tz(r),timer:0}); } }
+  G.buildings=[]; G.workers=[];
+  for(const i of (s.builds||[])){ const c=i%COLS,r=(i/COLS)|0;
+    const b={i,x:tw(c),z:tz(r)}; G.buildings.push(b); }
   computeFlow(); buildBoard(); buildRow(); refreshRow(); updateOwnedRunes(); updateWeatherChip();
+  for(const b of G.buildings) spawnWorkers(b);
   initAudio();
   G.running=true; cam.tx=0;cam.tz=0;cam.dist=17;
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('runeScreen').classList.add('hidden');
@@ -885,6 +1126,7 @@ function clearScene3D(){
   for(const e of G.enemies)scene.remove(e.mesh);
   for(const b of G.bullets)scene.remove(b.mesh);
   for(const t of G.tower)if(t)scene.remove(t.mesh);
+  for(const w of G.workers)scene.remove(w.mesh);
   if(weatherPts){scene.remove(weatherPts);weatherPts=null;}
 }
 
@@ -927,6 +1169,7 @@ function loop(now){
       if(G.waveActive&&G.spawnQueue.length){ G.spawnTimer-=dt;
         if(G.spawnTimer<=0){ spawnEnemy(G.spawnQueue.shift()); G.spawnTimer=0.55; } }
       updateEnemies(dt); updateTowers(dt,secs); updateBullets(dt);
+      updateWorkers(dt); updateMines(dt);
     }
     updateTimedFx(dt*G.speed);
     updateWeatherPts(dt);

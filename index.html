@@ -28,6 +28,9 @@
   .stat .val{font-weight:800;font-size:15px;font-variant-numeric:tabular-nums}
   .stat small{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
   .stat.gold .val{color:var(--gold)} .stat.life .val{color:var(--red)} .stat.wave .val{color:var(--blue)}
+  .stat.wood .val{color:#c8934a}
+  .twr .cost .cw{color:#c8934a;margin-left:5px}
+  .twr .cost.na .cw{color:var(--red)}
   #bottombar{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:8px 8px calc(8px + var(--safe-b));
     background:linear-gradient(180deg,transparent,rgba(6,12,18,.55) 22%)}
   #towerRow{display:flex;gap:7px;justify-content:center;overflow-x:auto;scrollbar-width:none}
@@ -121,6 +124,7 @@
 
 <div id="topbar">
   <div class="stat gold"><div class="val" id="uiGold">0</div><small>Gold</small></div>
+  <div class="stat wood"><div class="val" id="uiWood">0</div><small>Holz</small></div>
   <div class="stat life"><div class="val" id="uiLife">0</div><small>Langhaus</small></div>
   <div class="stat wave"><div class="val" id="uiWave">0</div><small>Welle</small></div>
   <div class="stat"><div class="val" id="uiScore">0</div><small>Punkte</small></div>
