@@ -1,5 +1,5 @@
 /* Yggdrasil Defense — Service Worker (cache-first, offline capable) */
-const CACHE = 'yggdrasil-v1';
+const CACHE = 'yggdrasil-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -8,7 +8,10 @@ const ASSETS = [
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/icon-maskable-512.png'
+  './icons/icon-maskable-512.png',
+  './3d/index.html',
+  './3d/game3d.js',
+  './3d/three.min.js'
 ];
 
 self.addEventListener('install', e => {
