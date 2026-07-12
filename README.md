@@ -15,12 +15,13 @@ Gegner, glühendes Spawn-Rift & Festung, additive Projektil-Bloom-Effekte, Ambie
 schattierte Felsen und cinematische Vignette. HUD-Icons als Inline-SVG, Runen als
 prozedurale Sigille. Performance-optimiert (vorgerendertes Terrain + Sprite-Cache) für 60 FPS.
 
-## 🧊 Echte 3D-Version (Beta)
-Unter **`/3d/`** liegt eine echte WebGL-3D-Version (Three.js, lokal gebündelt — offline-fähig):
+## 🧊 3D ist die Hauptversion
+Die Startseite ist jetzt die **echte WebGL-3D-Version** (Three.js, lokal gebündelt — offline-fähig):
 perspektivische Kamera (Pan + Pinch-Zoom), Mondlicht mit Echtzeit-Schatten, Low-Poly-3D-Modelle
 (Ballista, Runenstein, Walküren-Speer, Mjölnir, Bifröst-Bogen; Draugr, Berserker, Troll, Fenriswolf,
-Weltenschlange), Raycast-Tap-Bauen, gleiche Spielregeln wie 2D (Kern-Loop; noch ohne Runen/Wetter).
-Erreichbar über den Link „Echte 3D-Version (Beta)" auf dem Startbildschirm.
+Weltenschlange), Raycast-Tap-Bauen — plus **Runen-Roguelite, Wetter mit 3D-Partikeln, Zufalls-Events,
+Schwierigkeitsgrade, Sound, Auto-Save/Fortsetzen und Bestwert**.
+Die klassische 2D-Version bleibt unter **`/2d/`** spielbar (Link auf dem Startbildschirm).
 
 ## 🎮 Was drin ist (aktueller Stand)
 
