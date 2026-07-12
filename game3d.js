@@ -154,11 +154,87 @@ function initThree(){
   scene.add(sun);
   window.addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight);
     camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
+  initBursts();
 }
+let shake=0;
+function addShake(a){ shake=Math.max(shake,a); }
 function updateCamera(){
   const t=cam.tilt;
-  camera.position.set(cam.tx, Math.sin(t)*cam.dist, cam.tz+Math.cos(t)*cam.dist);
-  camera.lookAt(cam.tx,0,cam.tz);
+  let sx=0,sy=0;
+  if(shake>0.003){ sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; shake*=0.88; } else shake=0;
+  camera.position.set(cam.tx+sx, Math.sin(t)*cam.dist+sy, cam.tz+Math.cos(t)*cam.dist);
+  camera.lookAt(cam.tx+sx,0,cam.tz);
+}
+
+// ============================================================
+//  3D FX — pooled particle bursts + lightning arcs
+// ============================================================
+const PMAX=480;
+let bGeo=null,bPts=null,bAlive=0;
+const bPos=new Float32Array(PMAX*3), bVel=new Float32Array(PMAX*3),
+      bT=new Float32Array(PMAX), bLife=new Float32Array(PMAX),
+      bCol=new Float32Array(PMAX*3), bBase=new Float32Array(PMAX*3);
+function initBursts(){
+  bGeo=new THREE.BufferGeometry();
+  bGeo.setAttribute('position',new THREE.BufferAttribute(bPos,3));
+  bGeo.setAttribute('color',new THREE.BufferAttribute(bCol,3));
+  const m=new THREE.PointsMaterial({size:0.11,vertexColors:true,transparent:true,opacity:0.95,
+    blending:THREE.AdditiveBlending,depthWrite:false});
+  bPts=new THREE.Points(bGeo,m); bPts.frustumCulled=false; scene.add(bPts);
+  bGeo.setDrawRange(0,0);
+}
+function burst(x,y,z,hex,n,spd){
+  const c=new THREE.Color(hex);
+  for(let k=0;k<n;k++){
+    if(bAlive>=PMAX)break;
+    const i=bAlive++;
+    bPos[i*3]=x; bPos[i*3+1]=y; bPos[i*3+2]=z;
+    const a=Math.random()*Math.PI*2, el=Math.random()*Math.PI-Math.PI/2, s=(0.4+Math.random()*0.6)*(spd||3);
+    bVel[i*3]=Math.cos(a)*Math.cos(el)*s; bVel[i*3+1]=Math.abs(Math.sin(el))*s+1.2; bVel[i*3+2]=Math.sin(a)*Math.cos(el)*s;
+    bT[i]=0; bLife[i]=0.35+Math.random()*0.35;
+    bBase[i*3]=c.r; bBase[i*3+1]=c.g; bBase[i*3+2]=c.b;
+  }
+}
+function updateBursts(dt){
+  if(!bGeo)return;
+  let i=0;
+  while(i<bAlive){
+    bT[i]+=dt;
+    if(bT[i]>=bLife[i]){
+      const l=--bAlive;
+      for(let k=0;k<3;k++){ bPos[i*3+k]=bPos[l*3+k]; bVel[i*3+k]=bVel[l*3+k]; bBase[i*3+k]=bBase[l*3+k]; }
+      bT[i]=bT[l]; bLife[i]=bLife[l];
+      continue;
+    }
+    bVel[i*3+1]-=6*dt;
+    bPos[i*3]+=bVel[i*3]*dt; bPos[i*3+1]+=bVel[i*3+1]*dt; bPos[i*3+2]+=bVel[i*3+2]*dt;
+    if(bPos[i*3+1]<0.02){ bPos[i*3+1]=0.02; bVel[i*3+1]*=-0.3; }
+    const f=1-bT[i]/bLife[i];
+    bCol[i*3]=bBase[i*3]*f; bCol[i*3+1]=bBase[i*3+1]*f; bCol[i*3+2]=bBase[i*3+2]*f;
+    i++;
+  }
+  bGeo.setDrawRange(0,bAlive);
+  bGeo.attributes.position.needsUpdate=true;
+  bGeo.attributes.color.needsUpdate=true;
+}
+const arcs=[];
+function lightningArc(x1,y1,z1,x2,y2,z2,hex,jit){
+  const pts=[],N=7,J=jit==null?0.25:jit;
+  for(let i=0;i<=N;i++){ const t=i/N, e=(i>0&&i<N)?1:0;
+    pts.push(new THREE.Vector3(
+      x1+(x2-x1)*t+(Math.random()-0.5)*J*e,
+      y1+(y2-y1)*t+(Math.random()-0.5)*J*e,
+      z1+(z2-z1)*t+(Math.random()-0.5)*J*e)); }
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  const m=new THREE.LineBasicMaterial({color:hex,transparent:true,opacity:0.9,
+    blending:THREE.AdditiveBlending,depthWrite:false});
+  const l=new THREE.Line(g,m); scene.add(l);
+  arcs.push({l,t:0,life:0.13});
+}
+function updateArcs(dt){
+  for(const a of arcs){ a.t+=dt; a.l.material.opacity=0.9*(1-a.t/a.life); }
+  for(let i=arcs.length-1;i>=0;i--) if(arcs[i].t>=arcs[i].life){
+    scene.remove(arcs[i].l); arcs[i].l.geometry.dispose(); arcs[i].l.material.dispose(); arcs.splice(i,1); }
 }
 
 // ---------- static board ----------
@@ -370,6 +446,9 @@ function spawnEnemy(key){
   const e={key,def:d,x:tw(G.spawn.c),z:tz(G.spawn.r)+(Math.random()*0.5-0.25),r:d.r,hp,maxhp:hp,
     speed:d.speed*(0.92+Math.random()*0.16),slow:0,slowT:0,dead:false,boss:!!d.boss,mesh,anim:Math.random()*6,dying:0};
   mesh.position.set(e.x,0.02,e.z);
+  if(e.boss){ e.spawnT=0; mesh.scale.setScalar(0.15);
+    banner('Jörmungandr erhebt sich!'); addShake(0.5); sfx('boss');
+    burst(e.x,0.6,e.z,0x5ad0c0,30,4); }
   G.enemies.push(e);
 }
 function updateEnemies(dt){
@@ -388,7 +467,10 @@ function updateEnemies(dt){
     else { const cxw=tw(c)+fx*0.55, czw=tz(r)+fz*0.55; fx=cxw-e.x; fz=czw-e.z; }
     const l=Math.hypot(fx,fz)||1; const vx=fx/l*spd, vz=fz/l*spd;
     e.x+=vx*dt; e.z+=vz*dt;
-    // mesh anim: bob + lean + face movement
+    // mesh anim: bob + lean + face movement (+ boss scale-in entrance)
+    if(e.spawnT!==undefined&&e.spawnT<0.6){ e.spawnT+=dt;
+      const f=Math.min(1,e.spawnT/0.6);
+      e.mesh.scale.setScalar(0.15+0.85*(1-Math.pow(1-f,3))); }
     const bob=Math.abs(Math.sin(e.anim))*e.r*0.22;
     e.mesh.position.set(e.x, 0.02+bob, e.z);
     e.mesh.rotation.y=-Math.atan2(vz,vx);
@@ -406,6 +488,7 @@ function updateEnemies(dt){
 function baseHit(e){
   G.lives-=e.boss?5:1; updateHUD();
   banner('Das Langhaus wurde getroffen!');
+  burst(tw(G.base.c),0.6,tz(G.base.r),0xff5a52,20,4); addShake(e.boss?0.6:0.35);
   vib(30); sfx('basehit');
   if(G.lives<=0){G.lives=0; gameOver();}
 }
@@ -435,6 +518,7 @@ function tryBuild(c,r){
   const mesh=makeTower(G.selected); mesh.position.set(tw(c),0,tz(r)); scene.add(mesh);
   G.tower[i]={key:G.selected,c,r,x:tw(c),z:tz(r),def,level:1,dmg:def.dmg,range:def.range,rate:def.rate,
     cd:0,invested:cost,mesh,angle:0,recoil:0};
+  burst(tw(c),0.4,tz(r),def.color,10,2.5);
   vib(15); sfx('place');
   updateHUD();
 }
@@ -471,6 +555,10 @@ function fire(t,tgt){
   G.bullets.push({mesh,target:tgt,speed:def.bspeed,dmg:effDmg(t),
     splash:Math.max(def.splash||0,G.mods.splash),
     slow:Math.max(def.slow||0,G.mods.slow),slowT:(def.slowT||G.mods.slowT),dead:false});
+  // muzzle sparks + energy arcs
+  burst(t.x+Math.cos(t.angle)*0.5, sy, t.z+Math.sin(t.angle)*0.5, def.color, 3, 1.6);
+  if(t.key==='walkure') lightningArc(t.x,1.3,t.z, tgt.x,0.4,tgt.z, 0xffe27a, 0.3);
+  else if(t.key==='bifrost') lightningArc(t.x,0.95,t.z, tgt.x,0.4,tgt.z, 0xc88fff, 0.08);
   sfx('shoot');
 }
 function updateBullets(dt){
@@ -486,10 +574,13 @@ function updateBullets(dt){
   G.bullets=G.bullets.filter(b=>!b.dead);
 }
 function hit(b){
-  const bx=b.mesh.position.x,bz=b.mesh.position.z;
-  if(b.splash>0){ for(const e of G.enemies){ if(e.dead)continue;
-    if((e.x-bx)*(e.x-bx)+(e.z-bz)*(e.z-bz)<=b.splash*b.splash) dmg(e,b); } }
-  else if(b.target&&!b.target.dead) dmg(b.target,b);
+  const bx=b.mesh.position.x,by=b.mesh.position.y,bz=b.mesh.position.z;
+  const hex=b.mesh.material.color.getHex();
+  if(b.splash>0){
+    burst(bx,by,bz,hex,16,4); addShake(0.07);
+    for(const e of G.enemies){ if(e.dead)continue;
+      if((e.x-bx)*(e.x-bx)+(e.z-bz)*(e.z-bz)<=b.splash*b.splash) dmg(e,b); } }
+  else { burst(bx,by,bz,hex,5,2.2); if(b.target&&!b.target.dead) dmg(b.target,b); }
 }
 function hurt(e,amount){
   e.hp-=amount;
@@ -499,7 +590,8 @@ function hurt(e,amount){
     e.dead=true; e.dying=0;
     G.kills++; G.score+=e.boss?250:Math.max(1,Math.round(e.maxhp/6));
     const rw=Math.round(e.def.reward*goldMul()); G.gold+=rw;
-    if(e.boss){banner('Boss besiegt! +'+rw+' Gold'); sfx('boss'); vib(40);} else sfx('die');
+    burst(e.x,0.5,e.z, e.mesh.userData.body.material.color.getHex(), e.boss?34:13, e.boss?5:3);
+    if(e.boss){banner('Boss besiegt! +'+rw+' Gold'); sfx('boss'); vib(40); addShake(0.5);} else sfx('die');
     updateHUD();
   }
 }
@@ -566,9 +658,9 @@ function refreshRow(){
     el.querySelector('.nm').textContent=G.wave<def.unlock?'Welle '+def.unlock:def.name; });
   updateHUD();
 }
-let bT=null;
+let bnT=null;
 function banner(msg){ const b=$('banner'); b.textContent=msg; b.classList.add('show');
-  clearTimeout(bT); bT=setTimeout(()=>b.classList.remove('show'),1900); }
+  clearTimeout(bnT); bnT=setTimeout(()=>b.classList.remove('show'),1900); }
 
 // ---------- input: pan / pinch / tap ----------
 const ptr=new Map(); let moved=false,dx0=0,dy0=0,t0=0,pinch0=0,dist0=0;
@@ -847,6 +939,8 @@ function loop(now){
   }
   if(spawnRing){ spawnRing.rotation.z=secs*1.5; spawnRing.scale.setScalar(1+Math.sin(secs*3)*0.08); }
   if(baseGroup) baseGroup.rotation.y=Math.sin(secs*0.6)*0.04;
+  updateBursts(dt);
+  updateArcs(dt);
   updateCamera();
   renderer.render(scene,camera);
   requestAnimationFrame(loop);
