@@ -168,7 +168,7 @@ function pathOK(){return G.dist[idx(G.spawn.c,G.spawn.r)]>=0;}
 // ============================================================
 //  THREE SCENE
 // ============================================================
-let renderer,scene,camera,sun;
+let renderer,scene,camera,sun,hemi;
 const cam={tx:0,tz:0,dist:16,min:8,max:26,tilt:0.95};
 function glowTexture(){
   const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');
@@ -199,7 +199,8 @@ function initThree(){
   scene.fog=new THREE.Fog(0x060b12,20,42);
   camera=new THREE.PerspectiveCamera(52,innerWidth/innerHeight,0.1,120);
   GLOWTEX=glowTexture(); WHITETEX=whiteTexture();
-  scene.add(new THREE.HemisphereLight(0x2c4258,0x05080c,0.5));
+  hemi=new THREE.HemisphereLight(0x2c4258,0x05080c,0.5);
+  scene.add(hemi);
   sun=new THREE.DirectionalLight(0xcfe0f2,0.85);  // cold moonlight
   sun.position.set(-9,16,7); sun.castShadow=true;
   sun.shadow.mapSize.set(1024,1024);
@@ -217,6 +218,27 @@ function updateCamera(){
   if(shake>0.003){ sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; shake*=0.88; } else shake=0;
   camera.position.set(cam.tx+sx, Math.sin(t)*cam.dist+sy, cam.tz+Math.cos(t)*cam.dist);
   camera.lookAt(cam.tx+sx,0,cam.tz);
+}
+
+// ============================================================
+//  DAY / NIGHT CYCLE — build phase = day, assault = night,
+//  boss wave = blood moon
+// ============================================================
+const PHASES={
+  day:  { sun:new THREE.Color(0xffdfb0), sunI:1.45, hemiI:0.85, bg:new THREE.Color(0x0e1a24), exp:0.92 },
+  night:{ sun:new THREE.Color(0xcfe0f2), sunI:0.85, hemiI:0.50, bg:new THREE.Color(0x060b12), exp:0.72 },
+  blood:{ sun:new THREE.Color(0xff9d8a), sunI:0.80, hemiI:0.40, bg:new THREE.Color(0x0e0709), exp:0.70 },
+};
+function updateDayNight(dt){
+  if(!G)return;
+  const tgt = G.waveActive ? (G.wave%5===0?PHASES.blood:PHASES.night) : PHASES.day;
+  const k=Math.min(1,dt*1.4);
+  sun.color.lerp(tgt.sun,k);
+  sun.intensity+=(tgt.sunI-sun.intensity)*k;
+  hemi.intensity+=(tgt.hemiI-hemi.intensity)*k;
+  scene.background.lerp(tgt.bg,k);
+  scene.fog.color.copy(scene.background);
+  renderer.toneMappingExposure+=(tgt.exp-renderer.toneMappingExposure)*k;
 }
 
 // ============================================================
@@ -688,7 +710,14 @@ function endWave(){
 function tryBuild(c,r){
   const i=idx(c,r);
   if(G.grid[i]===T_TOWER&&G.tower[i]){ openSheet(G.tower[i]); return; }
-  if(G.grid[i]===T_WALL&&G.walls[i]){ const w=G.walls[i]; banner('Palisade · '+Math.ceil(w.hp)+'/'+w.maxhp); return; }
+  if(G.grid[i]===T_WALL&&G.walls[i]){ const w=G.walls[i];
+    if(w.hp<w.maxhp) repairStructure(w,'Palisade');
+    else banner('Palisade · '+Math.ceil(w.hp)+'/'+w.maxhp);
+    return; }
+  if(G.grid[i]===T_BUILDING){ const bb=G.buildings.find(b=>b.i===i);
+    if(bb){ if(bb.hp<bb.maxhp) repairStructure(bb,'Holzfäller-Hütte');
+      else banner('Holzfäller-Hütte · '+Math.ceil(bb.hp)+'/'+bb.maxhp+' · '+G.workers.filter(w=>w.home===bb).length+' Zwerge');
+      return; } }
   closeSheet();
   const cost=towerCost(G.selected), wcost=woodCost(G.selected);
   // --- palisade wall: may fully seal — enemies will besiege it ---
@@ -821,6 +850,18 @@ function updateWorkers(dt){
     }
   }
 }
+// ---------- repair ----------
+function repairCost(o){ return Math.ceil((o.maxhp-o.hp)*0.08); }
+function repairStructure(o,label){
+  if(o.hp>=o.maxhp){ banner(label+' ist unbeschädigt'); return false; }
+  const c=repairCost(o);
+  if(G.wood<c){ banner('Reparatur braucht '+c+' Holz'); return false; }
+  G.wood-=c; o.hp=o.maxhp;
+  setStructBar(o.mesh,1);
+  burst(o.mesh.position.x,0.5,o.mesh.position.z,0x4ade80,8,2);
+  banner(label+' repariert (−'+c+' Holz)'); sfx('place'); vib(10); updateHUD();
+  return true;
+}
 // ---------- structures under siege ----------
 function damageStructure(i,amount){
   let obj=null,kind=null,name='';
@@ -949,11 +990,16 @@ function openSheet(t){
   const c=upCost(t);
   $('shUpBtn').textContent=t.level>=4?'Max':'Upgrade · '+c+' Gold';
   $('shUpBtn').disabled=G.gold<c||t.level>=4;
+  const rc=repairCost(t);
+  $('shRepBtn').textContent=t.hp>=t.maxhp?'Intakt':'Reparieren · '+rc+' Holz';
+  $('shRepBtn').disabled=t.hp>=t.maxhp||G.wood<rc;
   $('shSellBtn').textContent='Verkaufen · '+Math.floor(t.invested*G.mods.sell)+' Gold';
   $('sheet').classList.add('show');
 }
 function closeSheet(){ G.inspect=null; rangeRing.visible=false; $('sheet').classList.remove('show'); }
 $('shCloseBtn').addEventListener('click',closeSheet);
+$('shRepBtn').addEventListener('click',()=>{ const t=G.inspect; if(!t)return;
+  if(repairStructure(t,t.def.name)) openSheet(t); });
 $('shUpBtn').addEventListener('click',()=>{ const t=G.inspect; if(!t||t.level>=4)return;
   const c=upCost(t); if(G.gold<c)return;
   G.gold-=c; t.level++; t.dmg=Math.round(t.dmg*1.6); t.range*=1.08; t.rate*=0.9; t.invested+=c;
@@ -1315,6 +1361,7 @@ function loop(now){
   if(baseGroup) baseGroup.rotation.y=Math.sin(secs*0.6)*0.04;
   updateBursts(dt);
   updateArcs(dt);
+  updateDayNight(dt);
   updateCamera();
   renderer.render(scene,camera);
   requestAnimationFrame(loop);
