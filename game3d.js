@@ -8,7 +8,7 @@ const $=id=>document.getElementById(id);
 
 // ---------- board / rules (mirrors 2D) ----------
 const COLS=22, ROWS=22;
-const T_GROUND=0, T_TOWER=1, T_BLOCK=2, T_SPAWN=3, T_BASE=4, T_TREE=5, T_VEIN=6, T_BUILDING=7;
+const T_GROUND=0, T_TOWER=1, T_BLOCK=2, T_SPAWN=3, T_BASE=4, T_TREE=5, T_VEIN=6, T_BUILDING=7, T_WALL=8;
 const TOWERS={
   einherjar:{name:'Einherjar',cost:60, wood:15,color:0x8fd6a0,range:2.6,dmg:14,rate:0.55,bspeed:11,unlock:0},
   runestein:{name:'Runestein',cost:85, wood:20,color:0x7db8ff,range:2.4,dmg:7, rate:0.9, bspeed:9, slow:0.45,slowT:1.4,unlock:0},
@@ -18,15 +18,17 @@ const TOWERS={
 };
 // economy buildings (Age-of-Darkness-style base building — GDD Module 04+09)
 const BUILDINGS={
-  lumber:{ name:'Holzfäller', cost:90, wood:0,  color:0xc8934a, unlock:0, radius:5.5, workers:2 },
+  palisade:{name:'Palisade',  cost:0,  wood:12, color:0x8a6a40, unlock:0, hp:110 },
+  lumber:{ name:'Holzfäller', cost:90, wood:0,  color:0xc8934a, unlock:0, radius:5.5, workers:2, hp:130 },
   goldmine:{name:'Goldmine',  cost:0,  wood:60, color:0xfbbf24, unlock:0, rate:3.5, yield:3 },
 };
+const TOWER_HP=170;
 const ENEMIES={
-  draugr:   {name:'Draugr',    hp:34, speed:1.15,reward:6,  r:0.40},
-  berserker:{name:'Berserker', hp:26, speed:2.1, reward:7,  r:0.36},
-  troll:    {name:'Troll',     hp:150,speed:0.75,reward:16, r:0.55},
-  helhound: {name:'Helhound',  hp:16, speed:3.0, reward:5,  r:0.33},
-  jormun:   {name:'Jörmungandr',hp:900,speed:0.9,reward:120,r:0.80,boss:true},
+  draugr:   {name:'Draugr',    hp:34, speed:1.15,reward:6,  r:0.40,atk:8},
+  berserker:{name:'Berserker', hp:26, speed:2.1, reward:7,  r:0.36,atk:13},
+  troll:    {name:'Troll',     hp:150,speed:0.75,reward:16, r:0.55,atk:30},
+  helhound: {name:'Helhound',  hp:16, speed:3.0, reward:5,  r:0.33,atk:6},
+  jormun:   {name:'Jörmungandr',hp:900,speed:0.9,reward:120,r:0.80,atk:80,boss:true},
 };
 const KEYS=Object.keys(TOWERS);
 
@@ -89,7 +91,7 @@ function newGame(){
   G={diff,diffKey:selDiff,grid:new Uint8Array(COLS*ROWS),tower:new Array(COLS*ROWS).fill(null),
      dist:new Int32Array(COLS*ROWS),flow:new Int8Array(COLS*ROWS*2),
      enemies:[],bullets:[],gold:230,wood:100,lives:diff.lives,wave:0,score:0,kills:0,
-     trees:{},veins:{},buildings:[],workers:[],mines:[],
+     trees:{},veins:{},buildings:[],workers:[],mines:[],walls:{},
      mods:{dmg:1,range:1,rate:1,gold:1,sell:0.6,discount:1,interest:0,splash:0,slow:0,slowT:0.8},
      runes:{},awaitingRune:false,
      weather:WEATHERS.clear,weatherKey:'clear',
@@ -128,15 +130,37 @@ function scatterResources(){
   }
 }
 function walk(c,r){ if(!inB(c,r))return false; const t=G.grid[idx(c,r)]; return t===T_GROUND||t===T_SPAWN||t===T_BASE; }
+// weighted step cost: 0 = impassable, structures are expensive but breakable
+function stepCost(c,r){
+  if(!inB(c,r))return 0;
+  const t=G.grid[idx(c,r)];
+  if(t===T_GROUND||t===T_SPAWN||t===T_BASE)return 1;
+  if(t===T_WALL||t===T_TOWER||t===T_BUILDING)return 22;  // enemies will smash through if it's cheaper
+  return 0;  // rocks / trees / veins
+}
 function computeFlow(){
-  const D=G.dist; D.fill(-1); const q=[idx(G.base.c,G.base.r)]; D[q[0]]=0; let qi=0;
+  const D=G.dist; D.fill(-1);
   const N=[[1,0],[-1,0],[0,1],[0,-1]];
-  while(qi<q.length){ const cur=q[qi++],cc=cur%COLS,cr=(cur/COLS)|0;
-    for(const[dc,dr]of N){const nc=cc+dc,nr=cr+dr; if(!walk(nc,nr))continue; const ni=idx(nc,nr);
-      if(D[ni]!==-1)continue; D[ni]=D[cur]+1; q.push(ni);} }
+  // Dijkstra from base (bucket queue; costs are small ints)
+  const buckets=[]; const push=(d,i)=>{ (buckets[d]=buckets[d]||[]).push(i); };
+  const b0=idx(G.base.c,G.base.r); D[b0]=0; push(0,b0);
+  let maxD=0;
+  for(let d=0;d<=maxD||d<buckets.length;d++){
+    const bk=buckets[d]; if(!bk)continue;
+    for(const cur of bk){
+      if(D[cur]!==d)continue;   // stale entry
+      const cc=cur%COLS,cr=(cur/COLS)|0;
+      for(const[dc,dr]of N){
+        const nc=cc+dc,nr=cr+dr, w=stepCost(nc,nr);
+        if(!w)continue;
+        const ni=idx(nc,nr), nd=d+w;
+        if(D[ni]===-1||nd<D[ni]){ D[ni]=nd; push(nd,ni); if(nd>maxD)maxD=nd; }
+      }
+    }
+  }
   for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const i=idx(c,r); G.flow[i*2]=0;G.flow[i*2+1]=0;
     if(D[i]<=0)continue; let best=D[i],bx=0,bz=0;
-    for(const[dc,dr]of N){const nc=c+dc,nr=r+dr; if(!walk(nc,nr))continue; const nd=D[idx(nc,nr)];
+    for(const[dc,dr]of N){const nc=c+dc,nr=r+dr; if(!stepCost(nc,nr))continue; const nd=D[idx(nc,nr)];
       if(nd!==-1&&nd<best){best=nd;bx=dc;bz=dr;}} G.flow[i*2]=bx;G.flow[i*2+1]=bz; }
 }
 function pathOK(){return G.dist[idx(G.spawn.c,G.spawn.r)]>=0;}
@@ -306,8 +330,6 @@ function buildBoard(){
     const m=makeVein(); m.position.set(tw(c),0,tz(r)); m.rotation.y=Math.random()*6;
     G.veins[i].mesh=m; boardGroup.add(m);
     if(G.veins[i].mine){ const mm=makeMine(); mm.position.set(tw(c),0,tz(r)); boardGroup.add(mm); } }
-  // lumber huts
-  for(const b of G.buildings){ const m=makeHut(); m.position.set(b.x,0,b.z); boardGroup.add(m); }
   // base keep
   baseGroup=new THREE.Group();
   const keep=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.5,0.62,8), std(0x9fb6a8,{roughness:0.7}));
@@ -375,6 +397,34 @@ function makeMine(){
   hole.position.set(0,0.15,0.24); g.add(hole);
   const gl=glowSprite(0xffd25a,0.9,0.4); gl.position.set(0,0.55,0.2); g.add(gl);
   return g;
+}
+function makePalisade(){
+  const g=new THREE.Group();
+  const wood=std(0x6e4a26,{roughness:0.9}), dark=std(0x4a2f16,{roughness:0.9});
+  for(let k=0;k<4;k++){
+    const x=-0.3+k*0.2, h=0.5+Math.random()*0.12;
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.09,h,7),k%2?wood:dark);
+    post.position.set(x,h/2,(Math.random()-0.5)*0.12); post.castShadow=true; g.add(post);
+    const tip=new THREE.Mesh(new THREE.ConeGeometry(0.075,0.14,7),dark);
+    tip.position.set(x,h+0.07,post.position.z); tip.castShadow=true; g.add(tip);
+  }
+  const beam=new THREE.Mesh(new THREE.BoxGeometry(0.78,0.07,0.09),wood);
+  beam.position.y=0.32; beam.rotation.z=0.03; beam.castShadow=true; g.add(beam);
+  return g;
+}
+// lazy hp bars on structures (only appear once damaged)
+function ensureStructBar(mesh,h){
+  if(mesh.userData.hpfg)return;
+  const bg=new THREE.Sprite(new THREE.SpriteMaterial({map:WHITETEX,color:0x111820,depthWrite:false}));
+  bg.scale.set(0.72,0.075,1); bg.position.y=h;
+  const fg=new THREE.Sprite(new THREE.SpriteMaterial({map:WHITETEX,color:0x4ade80,depthWrite:false}));
+  fg.scale.set(0.7,0.055,1); fg.position.y=h;
+  mesh.add(bg); mesh.add(fg); mesh.userData.hpfg=fg;
+}
+function setStructBar(mesh,f){
+  if(!mesh.userData.hpfg)return;
+  mesh.userData.hpfg.scale.x=0.7*Math.max(0,f);
+  mesh.userData.hpfg.material.color.setHex(f>0.5?0x4ade80:f>0.25?0xfbbf24:0xff5a52);
 }
 function makeDwarf(){
   const g=new THREE.Group();
@@ -564,7 +614,36 @@ function updateEnemies(dt){
     e.anim+=dt*spd*3.4;
     const c=clamp(Math.floor(e.x+COLS/2),0,COLS-1), r=clamp(Math.floor(e.z+ROWS/2),0,ROWS-1);
     if(c===G.base.c&&r===G.base.r){ e.dead=true; scene.remove(e.mesh); baseHit(e); continue; }
-    const i=idx(c,r); let fx=G.flow[i*2],fz=G.flow[i*2+1];
+    const i=idx(c,r); const dcx=G.flow[i*2],dcz=G.flow[i*2+1];
+    // siege: if the chosen path leads through a structure, attack it
+    if(dcx!==0||dcz!==0){
+      const nc=c+dcx,nr=r+dcz,ni=idx(nc,nr),nt=G.grid[ni];
+      if(nt===T_WALL||nt===T_TOWER||nt===T_BUILDING){
+        const sx=tw(nc),sz=tz(nr);
+        const ddx=sx-e.x,ddz=sz-e.z,dd=Math.hypot(ddx,ddz);
+        if(dd>0.72+e.r*0.3){ // approach the structure
+          e.x+=ddx/dd*spd*dt; e.z+=ddz/dd*spd*dt;
+          const bob=Math.abs(Math.sin(e.anim))*e.r*0.22;
+          e.mesh.position.set(e.x,0.02+bob,e.z);
+          e.mesh.rotation.y=-Math.atan2(ddz,ddx);
+        } else { // hack at it
+          e.atkT=(e.atkT==null?0.4:e.atkT)-dt;
+          const lunge=Math.max(0,Math.sin((0.9-Math.max(0,e.atkT))/0.9*Math.PI))*0.18;
+          e.mesh.position.set(e.x+ddx/dd*lunge, 0.02, e.z+ddz/dd*lunge);
+          e.mesh.rotation.y=-Math.atan2(ddz,ddx);
+          if(e.atkT<=0){ e.atkT=0.9;
+            damageStructure(ni, e.def.atk);
+            burst(sx,0.45,sz,0xffc06a,4,1.6);
+          }
+        }
+        // hp bar sync + flash decay still needed
+        const f2=clamp(e.hp/e.maxhp,0,1);
+        e.mesh.userData.hpfg.scale.x=e.r*2.16*f2;
+        if(e.flashT>0){ e.flashT-=dt; if(e.flashT<=0) e.mesh.userData.body.material.emissive.setHex(0x000000); }
+        continue;
+      }
+    }
+    let fx=dcx,fz=dcz;
     if(fx===0&&fz===0){ fx=tw(G.base.c)-e.x; fz=tz(G.base.r)-e.z; }
     else { const cxw=tw(c)+fx*0.55, czw=tz(r)+fz*0.55; fx=cxw-e.x; fz=czw-e.z; }
     const l=Math.hypot(fx,fz)||1; const vx=fx/l*spd, vz=fz/l*spd;
@@ -609,8 +688,22 @@ function endWave(){
 function tryBuild(c,r){
   const i=idx(c,r);
   if(G.grid[i]===T_TOWER&&G.tower[i]){ openSheet(G.tower[i]); return; }
+  if(G.grid[i]===T_WALL&&G.walls[i]){ const w=G.walls[i]; banner('Palisade · '+Math.ceil(w.hp)+'/'+w.maxhp); return; }
   closeSheet();
   const cost=towerCost(G.selected), wcost=woodCost(G.selected);
+  // --- palisade wall: may fully seal — enemies will besiege it ---
+  if(G.selected==='palisade'){
+    if(G.grid[i]!==T_GROUND){ banner('Hier kann nicht gebaut werden'); return; }
+    if(G.wood<wcost){ banner('Nicht genug Holz'); return; }
+    G.wood-=wcost;
+    G.grid[i]=T_WALL; computeFlow();
+    const mesh=makePalisade(); mesh.position.set(tw(c),0,tz(r));
+    mesh.rotation.y=(Math.random()<0.5?0:Math.PI/2)+(Math.random()-0.5)*0.1;
+    scene.add(mesh);
+    G.walls[i]={hp:BUILDINGS.palisade.hp,maxhp:BUILDINGS.palisade.hp,mesh};
+    burst(tw(c),0.4,tz(r),0x8a6a40,8,2);
+    vib(12); sfx('place'); updateHUD(); return;
+  }
   // --- goldmine: only on a vein ---
   if(G.selected==='goldmine'){
     if(G.grid[i]!==T_VEIN||!G.veins[i]||G.veins[i].mine){ banner('Nur auf einer freien Goldader baubar'); return; }
@@ -627,11 +720,10 @@ function tryBuild(c,r){
     if(G.grid[i]!==T_GROUND){ banner('Hier kann nicht gebaut werden'); return; }
     if(G.gold<cost){ banner('Nicht genug Gold'); return; }
     G.grid[i]=T_BUILDING; computeFlow();
-    if(!pathOK()){ G.grid[i]=T_GROUND; computeFlow(); banner('Das würde den Pfad blockieren!'); return; }
     G.gold-=cost;
-    const b={i,x:tw(c),z:tz(r)};
+    const m=makeHut(); m.position.set(tw(c),0,tz(r)); scene.add(m);
+    const b={i,x:tw(c),z:tz(r),hp:BUILDINGS.lumber.hp,maxhp:BUILDINGS.lumber.hp,mesh:m};
     G.buildings.push(b);
-    const m=makeHut(); m.position.set(b.x,0,b.z); boardGroup.add(m);
     spawnWorkers(b);
     burst(b.x,0.4,b.z,0xc8934a,12,2.5);
     banner('Holzfäller-Hütte errichtet — Zwerge an die Arbeit!'); vib(15); sfx('place'); updateHUD(); return;
@@ -643,11 +735,10 @@ function tryBuild(c,r){
   if(G.gold<cost){ banner('Nicht genug Gold'); return; }
   if(G.wood<wcost){ banner('Nicht genug Holz'); return; }
   G.grid[i]=T_TOWER; computeFlow();
-  if(!pathOK()){ G.grid[i]=T_GROUND; computeFlow(); banner('Das würde den Pfad blockieren!'); return; }
   G.gold-=cost; G.wood-=wcost;
   const mesh=makeTower(G.selected); mesh.position.set(tw(c),0,tz(r)); scene.add(mesh);
   G.tower[i]={key:G.selected,c,r,x:tw(c),z:tz(r),def,level:1,dmg:def.dmg,range:def.range,rate:def.rate,
-    cd:0,invested:cost,mesh,angle:0,recoil:0};
+    cd:0,invested:cost,mesh,angle:0,recoil:0,hp:TOWER_HP,maxhp:TOWER_HP};
   burst(tw(c),0.4,tz(r),def.color,10,2.5);
   vib(15); sfx('place');
   updateHUD();
@@ -729,6 +820,34 @@ function updateWorkers(dt){
         break;
     }
   }
+}
+// ---------- structures under siege ----------
+function damageStructure(i,amount){
+  let obj=null,kind=null,name='';
+  if(G.grid[i]===T_TOWER&&G.tower[i]){ obj=G.tower[i]; kind='tower'; name=obj.def.name; }
+  else if(G.grid[i]===T_WALL&&G.walls[i]){ obj=G.walls[i]; kind='wall'; name='Palisade'; }
+  else if(G.grid[i]===T_BUILDING){ obj=G.buildings.find(b=>b.i===i); kind='hut'; name='Holzfäller-Hütte'; }
+  if(!obj)return;
+  obj.hp-=amount;
+  ensureStructBar(obj.mesh, kind==='tower'?1.15:kind==='hut'?0.95:0.8);
+  setStructBar(obj.mesh, obj.hp/obj.maxhp);
+  sfx('thud');
+  if(obj.hp<=0) destroyStructure(i,obj,kind,name);
+}
+function destroyStructure(i,obj,kind,name){
+  const c=i%COLS,r=(i/COLS)|0;
+  scene.remove(obj.mesh);
+  if(kind==='tower'){ if(G.inspect===obj)closeSheet(); G.tower[i]=null; }
+  else if(kind==='wall'){ delete G.walls[i]; }
+  else { // hut: dismiss its dwarves
+    G.buildings=G.buildings.filter(b=>b!==obj);
+    G.workers=G.workers.filter(w=>{ if(w.home===obj){ scene.remove(w.mesh); return false; } return true; });
+  }
+  G.grid[i]=T_GROUND;
+  computeFlow();
+  burst(tw(c),0.5,tz(r),0xff9d5a,20,3.5);
+  addShake(0.3); vib(40); sfx('basehit');
+  banner(name+' zerstört!');
 }
 function updateMines(dt){
   const def=BUILDINGS.goldmine;
@@ -838,6 +957,7 @@ $('shCloseBtn').addEventListener('click',closeSheet);
 $('shUpBtn').addEventListener('click',()=>{ const t=G.inspect; if(!t||t.level>=4)return;
   const c=upCost(t); if(G.gold<c)return;
   G.gold-=c; t.level++; t.dmg=Math.round(t.dmg*1.6); t.range*=1.08; t.rate*=0.9; t.invested+=c;
+  t.maxhp+=60; t.hp+=60; setStructBar(t.mesh,t.hp/t.maxhp);
   t.mesh.scale.setScalar(1+0.07*(t.level-1)); sfx('upgrade'); vib(15);
   openSheet(t); updateHUD(); });
 $('shSellBtn').addEventListener('click',()=>{ const t=G.inspect; if(!t)return;
@@ -962,6 +1082,8 @@ function sfx(n){
     case 'basehit': beep(120,0.28,'sawtooth',0.35,45); break;
     case 'rune': beep(523,0.12,'sine',0.26); setTimeout(()=>beep(659,0.12,'sine',0.26),95); setTimeout(()=>beep(784,0.2,'sine',0.26),190); break;
     case 'event': beep(880,0.09,'sine',0.14,1250); break;
+    case 'thud': { const now=performance.now(); if(now-lastShoot<70)return; lastShoot=now;
+      beep(95,0.08,'square',0.16,55); break; }
     case 'over': beep(420,0.5,'sawtooth',0.3,70); break;
   }
 }
@@ -1068,12 +1190,13 @@ function triggerEvent(){
 function serializeRun(){
   if(!G||G.over||G.wave<1)return null;
   const towers=[];
-  for(const t of G.tower) if(t) towers.push({c:t.c,r:t.r,key:t.key,level:t.level,dmg:t.dmg,range:t.range,rate:t.rate,invested:t.invested});
-  return {v:2,grid:Array.from(G.grid),towers,gold:G.gold,wood:G.wood,lives:G.lives,wave:G.wave,score:G.score,kills:G.kills,
+  for(const t of G.tower) if(t) towers.push({c:t.c,r:t.r,key:t.key,level:t.level,dmg:t.dmg,range:t.range,rate:t.rate,invested:t.invested,hp:t.hp,maxhp:t.maxhp});
+  return {v:3,grid:Array.from(G.grid),towers,gold:G.gold,wood:G.wood,lives:G.lives,wave:G.wave,score:G.score,kills:G.kills,
     mods:G.mods,runes:G.runes,diffKey:G.diffKey,
     trees:Object.keys(G.trees).map(i=>[+i,G.trees[i].hp]),
     veins:Object.keys(G.veins).map(i=>[+i,G.veins[i].mine?1:0]),
-    builds:G.buildings.map(b=>b.i)};
+    builds:G.buildings.map(b=>[b.i,b.hp]),
+    walls:Object.keys(G.walls).map(i=>[+i,G.walls[i].hp])};
 }
 function saveRun(){ const s=serializeRun(); if(s)try{localStorage.setItem('ygg3d_save',JSON.stringify(s));}catch(e){} }
 function clearSave(){ try{localStorage.removeItem('ygg3d_save');}catch(e){} }
@@ -1091,7 +1214,8 @@ function resumeRun(){
   for(const tt of s.towers){ const def=TOWERS[tt.key]; if(!def)continue; const i=idx(tt.c,tt.r);
     const mesh=makeTower(tt.key); mesh.position.set(tw(tt.c),0,tz(tt.r)); mesh.scale.setScalar(1+0.07*(tt.level-1)); scene.add(mesh);
     G.tower[i]={key:tt.key,c:tt.c,r:tt.r,x:tw(tt.c),z:tz(tt.r),def,level:tt.level,dmg:tt.dmg,range:tt.range,
-      rate:tt.rate,cd:0,invested:tt.invested,mesh,angle:0,recoil:0};
+      rate:tt.rate,cd:0,invested:tt.invested,mesh,angle:0,recoil:0,
+      hp:tt.hp!=null?tt.hp:TOWER_HP,maxhp:tt.maxhp!=null?tt.maxhp:TOWER_HP};
     G.grid[i]=T_TOWER; }
   G.gold=s.gold;G.lives=s.lives;G.wave=s.wave;G.score=s.score;G.kills=s.kills;
   G.wood=s.wood!=null?s.wood:100;
@@ -1101,9 +1225,14 @@ function resumeRun(){
   G.veins={}; G.mines=[];
   for(const [i,mined] of (s.veins||[])){ G.veins[i]={mine:mined?{timer:0}:null};
     if(mined){ const c=i%COLS,r=(i/COLS)|0; G.mines.push({i,x:tw(c),z:tz(r),timer:0}); } }
-  G.buildings=[]; G.workers=[];
-  for(const i of (s.builds||[])){ const c=i%COLS,r=(i/COLS)|0;
-    const b={i,x:tw(c),z:tz(r)}; G.buildings.push(b); }
+  G.buildings=[]; G.workers=[]; G.walls={};
+  for(const ent of (s.builds||[])){ const [bi,bhp]=Array.isArray(ent)?ent:[ent,BUILDINGS.lumber.hp];
+    const c=bi%COLS,r=(bi/COLS)|0;
+    const m=makeHut(); m.position.set(tw(c),0,tz(r)); scene.add(m);
+    const b={i:bi,x:tw(c),z:tz(r),hp:bhp,maxhp:BUILDINGS.lumber.hp,mesh:m}; G.buildings.push(b); }
+  for(const [wi,whp] of (s.walls||[])){ const c=wi%COLS,r=(wi/COLS)|0;
+    const m=makePalisade(); m.position.set(tw(c),0,tz(r)); scene.add(m);
+    G.walls[wi]={hp:whp,maxhp:BUILDINGS.palisade.hp,mesh:m}; }
   computeFlow(); buildBoard(); buildRow(); refreshRow(); updateOwnedRunes(); updateWeatherChip();
   for(const b of G.buildings) spawnWorkers(b);
   initAudio();
@@ -1127,6 +1256,8 @@ function clearScene3D(){
   for(const b of G.bullets)scene.remove(b.mesh);
   for(const t of G.tower)if(t)scene.remove(t.mesh);
   for(const w of G.workers)scene.remove(w.mesh);
+  for(const i in G.walls)scene.remove(G.walls[i].mesh);
+  for(const b of G.buildings)if(b.mesh)scene.remove(b.mesh);
   if(weatherPts){scene.remove(weatherPts);weatherPts=null;}
 }
 
