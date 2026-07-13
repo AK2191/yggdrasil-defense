@@ -23,9 +23,11 @@ const BUILDINGS={
   goldmine:{name:'Goldmine',  cost:0,  wood:60, color:0xfbbf24, unlock:0, rate:3.5, yield:4 },
   barracks:{name:'Kaserne',   cost:140,wood:40, color:0x6ab0ff, unlock:1, hp:160, troops:3 },
   archery:{ name:'Schießstand',cost:160,wood:50, color:0x9fe08a, unlock:2, hp:140, troops:2 },
+  shieldhall:{name:'Schildhalle',cost:190,wood:70, color:0xd8b34a, unlock:3, hp:200, troops:2 },
 };
 const TROOP={hp:70,dps:11,rate:0.8,speed:1.9,aggro:4.5,respawn:14};
 const ARCHER={hp:42,dps:8,rate:1.15,range:3.2,speed:1.8};
+const HUSKARL={hp:190,dps:6,rate:1.0,speed:1.45};
 const TOWER_HP=170;
 const ENEMIES={
   draugr:   {name:'Draugr',    hp:34, speed:1.15,reward:6,  r:0.40,atk:8},
@@ -97,7 +99,7 @@ function newGame(){
      enemies:[],bullets:[],gold:230,wood:120,lives:diff.lives,wave:0,score:0,kills:0,
      trees:{},veins:{},buildings:[],workers:[],mines:[],walls:{},troops:[],rallyFor:null,
      mods:{dmg:1,range:1,rate:1,gold:1,sell:0.6,discount:1,interest:0,splash:0,slow:0,slowT:0.8,
-       woodYield:6,mineYield:0,wallHp:0,wSpeed:1},
+       woodYield:6,mineYield:0,wallHp:0,wSpeed:1,troopDmg:1,troopHp:1},
      runes:{},awaitingRune:false,
      tech:{done:[],cur:null,prog:0},
      buildTimer:50,
@@ -565,6 +567,53 @@ function makeArcheryRange(){
   tg.position.set(0.44,0.4,0.12); tg.rotation.y=-0.6; g.add(tg);
   return g;
 }
+function makeHuskarl(){ // heavy tank: horned helm, tower shield, spear
+  const g=makeHumanoid(0.86,{torso:0x6a5230,skin:0xd8a077,leg:0x4a3a22,arm:0x6a5230});
+  const P=g.userData.parts, s=0.86;
+  // broad iron helm with horns
+  const helm=new THREE.Mesh(new THREE.SphereGeometry(0.15*s,10,7,0,Math.PI*2,0,Math.PI/2),
+    M2(0x8a929c,{metalness:0.8,roughness:0.4}));
+  helm.position.y=0.02*s; P.head.add(helm);
+  for(const sd of [-1,1]){
+    const horn=new THREE.Mesh(new THREE.ConeGeometry(0.035*s,0.14*s,6),M2(0xe8dcc0));
+    horn.position.set(0,0.06*s,sd*0.13*s); horn.rotation.x=sd*0.9; P.head.add(horn);
+  }
+  // big tower shield covering the left side
+  const shield=new THREE.Mesh(new THREE.BoxGeometry(0.05*s,0.52*s,0.34*s),M2(0xb08a3a,{metalness:0.35,roughness:0.55}));
+  shield.position.set(0.1*s,-P.lArm.userData.len*0.65,0); shield.castShadow=true; P.lArm.add(shield);
+  const boss3=new THREE.Mesh(new THREE.SphereGeometry(0.05*s,8,6),M2(0xe8d9a8,{metalness:0.85}));
+  boss3.position.set(0.14*s,-P.lArm.userData.len*0.65,0); P.lArm.add(boss3);
+  // spear in the right hand
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.016*s,0.016*s,0.7*s,6),M2(0x6e4a26));
+  shaft.position.set(0.02*s,-P.rArm.userData.len*0.9,0); P.rArm.add(shaft);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(0.035*s,0.12*s,6),M2(0xc9d2dc,{metalness:0.9}));
+  tip.position.set(0.02*s,-P.rArm.userData.len*0.9+0.41*s,0); P.rArm.add(tip);
+  // hp bar
+  const bg=new THREE.Sprite(new THREE.SpriteMaterial({map:WHITETEX,color:0x111820,depthWrite:false}));
+  bg.scale.set(0.6,0.07,1); bg.position.y=1.08;
+  const fg=new THREE.Sprite(new THREE.SpriteMaterial({map:WHITETEX,color:0xd8b34a,depthWrite:false}));
+  fg.scale.set(0.58,0.05,1); fg.position.y=1.08;
+  g.add(bg); g.add(fg); g.userData.hpfg=fg;
+  return g;
+}
+function makeShieldHall(){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.82,0.44,0.6),M2(0x5c4a2c,{roughness:0.85}));
+  body.position.y=0.22; body.castShadow=true; g.add(body);
+  const roof=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.52,0.36,4),M2(0x3c2f1c,{roughness:0.9}));
+  roof.rotation.y=Math.PI/4; roof.position.y=0.62; roof.scale.z=0.75; roof.castShadow=true; g.add(roof);
+  // round shields decorating the front wall
+  for(let k=0;k<3;k++){
+    const sh=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.03,10),
+      M2(k===1?0xb08a3a:0x8a3a30,{roughness:0.5}));
+    sh.rotation.x=Math.PI/2; sh.position.set(-0.24+k*0.24,0.28,0.315); g.add(sh);
+    const bs=new THREE.Mesh(new THREE.SphereGeometry(0.025,8,6),M2(0xe8d9a8,{metalness:0.85}));
+    bs.position.set(-0.24+k*0.24,0.28,0.335); g.add(bs);
+  }
+  const door=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.26,0.02),M2(0x2a1f12));
+  door.position.set(0,0.13,0.31); g.add(door);
+  return g;
+}
 function makeRallyFlag(){
   const g=new THREE.Group();
   const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.6,6),M2(0x8a6a40));
@@ -904,7 +953,8 @@ function updateEnemies(dt){
         foe.flashT=0.1; foe.mesh.userData.body.material.emissive.setHex(0xffffff);
         foe.mesh.userData.body.material.emissiveIntensity=0.5;
         burst(foe.x,0.5,foe.z,0xff8a70,3,1.6); sfx('thud');
-        if(foe.hp<=0&&!foe.dead){ foe.dead=true; foe.dying=0; banner('Ein Krieger ist gefallen'); }
+        if(foe.hp<=0&&!foe.dead){ foe.dead=true; foe.dying=0;
+          banner(foe.kind==='archer'?'Ein Bogenschütze ist gefallen':foe.kind==='huskarl'?'Ein Huskarl ist gefallen':'Ein Krieger ist gefallen'); }
       }
       const f3=clamp(e.hp/e.maxhp,0,1);
       e.mesh.userData.hpfg.scale.x=e.r*2.16*f3;
@@ -1016,7 +1066,7 @@ function tryBuild(c,r){
     banner('Goldmine errichtet'); vib(15); sfx('place'); updateHUD(); return;
   }
   // --- lumber hut ---
-  if(G.selected==='barracks'||G.selected==='archery'){
+  if(G.selected==='barracks'||G.selected==='archery'||G.selected==='shieldhall'){
     const bdef=BUILDINGS[G.selected];
     if(G.grid[i]!==T_GROUND){ banner('Hier kann nicht gebaut werden'); return; }
     if(G.wave<bdef.unlock){ banner(bdef.name+' ab Welle '+bdef.unlock); return; }
@@ -1024,7 +1074,7 @@ function tryBuild(c,r){
     if(G.wood<wcost){ banner('Nicht genug Holz'); return; }
     G.grid[i]=T_BUILDING; computeFlow();
     G.gold-=cost; G.wood-=wcost;
-    const m=G.selected==='archery'?makeArcheryRange():makeBarracks();
+    const m=G.selected==='archery'?makeArcheryRange():G.selected==='shieldhall'?makeShieldHall():makeBarracks();
     m.position.set(tw(c),0,tz(r)); scene.add(m);
     const b={i,x:tw(c),z:tz(r),hp:bdef.hp,maxhp:bdef.hp,mesh:m,
       type:G.selected,rally:{x:tw(c),z:tz(r)+1.2},respawnT:0,flag:null};
@@ -1153,6 +1203,9 @@ const TECHS=[
   {id:'sharp', tier:1,name:'Schärfere Pfeile', desc:'+12% Turmschaden',            gold:60, wood:20, time:22, apply:m=>m.dmg*=1.12},
   {id:'axes',  tier:1,name:'Bessere Äxte',     desc:'Zwerge bringen +3 Holz',      gold:40, wood:0,  time:18, apply:m=>m.woodYield+=3},
   {id:'mason', tier:1,name:'Steinverstärkung', desc:'Neue Palisaden +70 HP',       gold:30, wood:30, time:18, apply:m=>m.wallHp+=70},
+  {id:'drill', tier:2,name:'Kampftraining',    desc:'Truppen +30% Schaden',        gold:110,wood:30, time:26, apply:m=>m.troopDmg*=1.3},
+  {id:'mail',  tier:2,name:'Kettenhemden',     desc:'Truppen +40% Leben',          gold:120,wood:35, time:28, apply:m=>{m.troopHp*=1.4;
+    for(const t of G.troops){ if(!t.dead){ t.maxhp=Math.round(t.maxhp*1.4); t.hp=Math.round(t.hp*1.4); } }}},
   {id:'metal', tier:2,name:'Metallurgie',      desc:'+15% Schaden, +10% Feuerrate',gold:120,wood:40, time:32, apply:m=>{m.dmg*=1.15;m.rate*=0.9;}},
   {id:'smelt', tier:2,name:'Goldschmelze',     desc:'Minen fördern +2 Gold',       gold:100,wood:30, time:28, apply:m=>m.mineYield+=2},
   {id:'boots', tier:2,name:'Flinke Stiefel',   desc:'Zwerge +30% Tempo',           gold:80, wood:20, time:24, apply:m=>m.wSpeed*=1.3},
@@ -1253,14 +1306,15 @@ function destroyStructure(i,obj,kind,name){
   banner(name+' zerstört!');
 }
 // ---------- troops (viking defenders) ----------
-function troopKindOf(b){ return b.type==='archery'?'archer':'warrior'; }
-function troopStats(kind){ return kind==='archer'?ARCHER:TROOP; }
+function troopKindOf(b){ return b.type==='archery'?'archer':b.type==='shieldhall'?'huskarl':'warrior'; }
+function troopStats(kind){ return kind==='archer'?ARCHER:kind==='huskarl'?HUSKARL:TROOP; }
 function makeTroop(b){
   const kind=troopKindOf(b), S=troopStats(kind);
-  const mesh=kind==='archer'?makeArcher():makeWarrior(); scene.add(mesh);
+  const mesh=kind==='archer'?makeArcher():kind==='huskarl'?makeHuskarl():makeWarrior(); scene.add(mesh);
   mesh.position.set(b.x+(Math.random()-0.5)*0.6,0,b.z+0.5);
+  const hp=Math.round(S.hp*G.mods.troopHp);
   const t={mesh,home:b,kind,x:mesh.position.x,z:mesh.position.z,
-    hp:S.hp,maxhp:S.hp,target:null,atkT:0,anim:Math.random()*6,dead:false,dying:0,flashT:0};
+    hp,maxhp:hp,target:null,atkT:0,anim:Math.random()*6,dead:false,dying:0,flashT:0};
   G.troops.push(t); return t;
 }
 function spawnTroops(b){
@@ -1328,7 +1382,7 @@ function updateTroops(dt){
         }
         t.atkT-=dt;
         if(t.atkT<=0){ t.atkT=S.rate;
-          hurt(e,S.dps);
+          hurt(e,S.dps*G.mods.troopDmg);
           if(isArcher){ fireArrow(t.x,t.z,e.x,e.z); burst(e.x,0.5,e.z,0x9fe08a,2,1.4); }
           else burst(e.x,0.5,e.z,0xc9d2dc,3,1.6);
         }
@@ -1349,7 +1403,7 @@ function updateTroops(dt){
     if(t.home&&!t.home.destroyed) t.home.respawnT=Math.max(t.home.respawnT||0,TROOP.respawn);
     return false; } return true; });
   for(const b of G.buildings){
-    if(b.type!=='barracks'&&b.type!=='archery')continue;
+    if(!BUILDINGS[b.type]||!BUILDINGS[b.type].troops)continue;
     const alive=G.troops.filter(t=>t.home===b&&!t.dead).length;
     if(alive<BUILDINGS[b.type].troops){
       b.respawnT=(b.respawnT||TROOP.respawn)-dt;
@@ -1504,7 +1558,7 @@ function updateHUD(){
     cost.classList.toggle('na',!canAfford(k)&&!locked);
   });
 }
-const BUILD_TABS={ def:KEYS, eco:['palisade','lumber','goldmine','barracks','archery'] };
+const BUILD_TABS={ def:KEYS, eco:['palisade','lumber','goldmine','barracks','archery','shieldhall'] };
 let activeTab='def';
 // ---- drag & drop building (no more tap-to-build misclicks) ----
 let drag=null;   // {key, ghost, marker, valid, c, r}
@@ -1524,6 +1578,7 @@ function ghostFor(key){
   else if(key==='lumber') m=makeHut();
   else if(key==='barracks') m=makeBarracks();
   else if(key==='archery') m=makeArcheryRange();
+  else if(key==='shieldhall') m=makeShieldHall();
   else if(key==='goldmine') m=makeMine();
   else m=makePalisade();
   m.traverse(o=>{ if(o.material){ o.material=o.material.clone(); o.material.transparent=true; o.material.opacity=0.55; o.castShadow=false; } });
@@ -1680,9 +1735,10 @@ function tap(sx,sy){
     return; }
   if(G.grid[i]===T_BUILDING){ const bb=G.buildings.find(b=>b.i===i);
     if(bb){
-      if(bb.type==='barracks'||bb.type==='archery'){
+      if(BUILDINGS[bb.type]&&BUILDINGS[bb.type].troops){
         if(bb.hp<bb.maxhp&&G.wood>=repairCost(bb)){ repairStructure(bb,BUILDINGS[bb.type].name); return; }
-        G.rallyFor=bb; banner('Auf die Karte tippen: Sammelpunkt für die '+(bb.type==='archery'?'Bogenschützen':'Krieger')); return;
+        const who=bb.type==='archery'?'Bogenschützen':bb.type==='shieldhall'?'Huskarle':'Krieger';
+        G.rallyFor=bb; banner('Auf die Karte tippen: Sammelpunkt für die '+who); return;
       }
       if(bb.hp<bb.maxhp) repairStructure(bb,'Holzfäller-Hütte');
       else banner('Holzfäller-Hütte · '+Math.ceil(bb.hp)+'/'+bb.maxhp+' · '+G.workers.filter(w=>w.home===bb).length+' Zwerge');
@@ -1876,10 +1932,10 @@ function resumeRun(){
     const [bi,bhp,btype,rx,rz]=arr; const type=btype||'lumber';
     const c=bi%COLS,r=(bi/COLS)|0;
     const def=BUILDINGS[type]||BUILDINGS.lumber;
-    const m=type==='barracks'?makeBarracks():type==='archery'?makeArcheryRange():makeHut();
+    const m=type==='barracks'?makeBarracks():type==='archery'?makeArcheryRange():type==='shieldhall'?makeShieldHall():makeHut();
     m.position.set(tw(c),0,tz(r)); scene.add(m);
     const b={i:bi,x:tw(c),z:tz(r),hp:bhp,maxhp:def.hp,mesh:m,type};
-    if(type==='barracks'||type==='archery'){
+    if(BUILDINGS[type]&&BUILDINGS[type].troops){
       b.rally={x:rx||b.x,z:rz||b.z+1.2}; b.respawnT=0;
       b.flag=makeRallyFlag(); b.flag.position.set(b.rally.x,0,b.rally.z); scene.add(b.flag);
     }
@@ -1890,7 +1946,7 @@ function resumeRun(){
   G.tech={done:s.tech||[],cur:null,prog:0};
   G.buildTimer=35;
   computeFlow(); buildBoard(); buildRow(); refreshRow(); updateOwnedRunes(); updateWeatherChip();
-  for(const b of G.buildings){ if(b.type==='barracks'||b.type==='archery') spawnTroops(b); else spawnWorkers(b); }
+  for(const b of G.buildings){ if(BUILDINGS[b.type]&&BUILDINGS[b.type].troops) spawnTroops(b); else spawnWorkers(b); }
   initAudio();
   mini.style.display='block'; drawMinimap();
   G.running=true; cam.tx=tw(G.base.c)-5; cam.tz=0; cam.dist=13; cam.targetDist=13;

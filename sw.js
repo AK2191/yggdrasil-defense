@@ -1,5 +1,5 @@
 /* Yggdrasil Defense — Service Worker (cache-first, offline capable) */
-const CACHE = 'yggdrasil-v4';
+const CACHE = 'yggdrasil-v5';
 const ASSETS = [
   './',
   './index.html',

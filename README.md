@@ -32,9 +32,11 @@ Baue **Goldminen** auf Adern für passives Einkommen (GDD-Modul 04). Türme kost
 **Gold + Holz** — die Wirtschaft trägt die Verteidigung.
 
 **Truppen:** Die **Kaserne** stellt Wikinger-Krieger (Nahkampf), der **Schießstand**
-Bogenschützen (Fernkampf mit Pfeil-Tracern). Beide halten einen per Antippen setzbaren
-**Sammelpunkt**, greifen Gegner in der Nähe selbstständig an und rücken nach Verlusten
-automatisch nach.
+Bogenschützen (Fernkampf mit Pfeil-Tracern), die **Schildhalle** Huskarle — schwere
+Tanks mit Turmschild und Speer, die vorne die Schläge fressen. Alle halten einen per
+Antippen setzbaren **Sammelpunkt**, greifen Gegner in der Nähe selbstständig an und
+rücken nach Verlusten automatisch nach. Im **Tech-Baum**: *Kampftraining* (+30%
+Truppenschaden) und *Kettenhemden* (+40% Truppenleben, wirkt sofort).
 
 ## 🎮 Was drin ist (aktueller Stand)
 
