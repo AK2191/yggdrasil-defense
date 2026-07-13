@@ -31,6 +31,11 @@ nächsten Baum, hacken ihn sichtbar um und tragen das Holz heim (GDD-Modul 09, A
 Baue **Goldminen** auf Adern für passives Einkommen (GDD-Modul 04). Türme kosten
 **Gold + Holz** — die Wirtschaft trägt die Verteidigung.
 
+**Truppen:** Die **Kaserne** stellt Wikinger-Krieger (Nahkampf), der **Schießstand**
+Bogenschützen (Fernkampf mit Pfeil-Tracern). Beide halten einen per Antippen setzbaren
+**Sammelpunkt**, greifen Gegner in der Nähe selbstständig an und rücken nach Verlusten
+automatisch nach.
+
 ## 🎮 Was drin ist (aktueller Stand)
 
 Dies ist der spielbare **Kern-Loop** — im GDD die Module **01–08**, dort als *„Spielbar!"* markiert:

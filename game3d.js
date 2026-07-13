@@ -20,10 +20,12 @@ const TOWERS={
 const BUILDINGS={
   palisade:{name:'Palisade',  cost:0,  wood:12, color:0x8a6a40, unlock:0, hp:110 },
   lumber:{ name:'Holzfäller', cost:90, wood:0,  color:0xc8934a, unlock:0, radius:5.5, workers:2, hp:130 },
-  goldmine:{name:'Goldmine',  cost:0,  wood:60, color:0xfbbf24, unlock:0, rate:3.5, yield:3 },
+  goldmine:{name:'Goldmine',  cost:0,  wood:60, color:0xfbbf24, unlock:0, rate:3.5, yield:4 },
   barracks:{name:'Kaserne',   cost:140,wood:40, color:0x6ab0ff, unlock:1, hp:160, troops:3 },
+  archery:{ name:'Schießstand',cost:160,wood:50, color:0x9fe08a, unlock:2, hp:140, troops:2 },
 };
-const TROOP={hp:70,dps:11,rate:0.8,speed:1.9,aggro:4.5,respawn:12};
+const TROOP={hp:70,dps:11,rate:0.8,speed:1.9,aggro:4.5,respawn:14};
+const ARCHER={hp:42,dps:8,rate:1.15,range:3.2,speed:1.8};
 const TOWER_HP=170;
 const ENEMIES={
   draugr:   {name:'Draugr',    hp:34, speed:1.15,reward:6,  r:0.40,atk:8},
@@ -92,7 +94,7 @@ function newGame(){
   const diff=DIFFS[selDiff]||DIFFS.normal;
   G={diff,diffKey:selDiff,grid:new Uint8Array(COLS*ROWS),tower:new Array(COLS*ROWS).fill(null),
      dist:new Int32Array(COLS*ROWS),flow:new Int8Array(COLS*ROWS*2),
-     enemies:[],bullets:[],gold:230,wood:100,lives:diff.lives,wave:0,score:0,kills:0,
+     enemies:[],bullets:[],gold:230,wood:120,lives:diff.lives,wave:0,score:0,kills:0,
      trees:{},veins:{},buildings:[],workers:[],mines:[],walls:{},troops:[],rallyFor:null,
      mods:{dmg:1,range:1,rate:1,gold:1,sell:0.6,discount:1,interest:0,splash:0,slow:0,slowT:0.8,
        woodYield:6,mineYield:0,wallHp:0,wSpeed:1},
@@ -523,6 +525,44 @@ function makeBarracks(){
   ban.position.set(0.3,0.5,0.31); g.add(ban);
   const door=new THREE.Mesh(new THREE.BoxGeometry(0.16,0.24,0.02),M2(0x2a1f12));
   door.position.set(0,0.12,0.31); g.add(door);
+  return g;
+}
+function makeArcher(){ // ranged defender: hood, bow, quiver
+  const g=makeHumanoid(0.74,{torso:0x4a6a3a,skin:0xd8a077,leg:0x33482a,arm:0x4a6a3a});
+  const P=g.userData.parts, s=0.74;
+  const hood=new THREE.Mesh(new THREE.ConeGeometry(0.13*s,0.2*s,8),M2(0x3a5230));
+  hood.position.y=0.1*s; P.head.add(hood);
+  // bow held by the left arm (arc + string)
+  const bow=new THREE.Mesh(new THREE.TorusGeometry(0.22*s,0.018*s,6,14,2.4),M2(0x6e4a26));
+  bow.rotation.z=2.0;
+  bow.position.set(0.06*s,-P.lArm.userData.len*0.85,0); P.lArm.add(bow);
+  const str=new THREE.Mesh(new THREE.BoxGeometry(0.006*s,0.4*s,0.006*s),M2(0xd9d2c0));
+  str.position.set(0,-P.lArm.userData.len*0.85,0); P.lArm.add(str);
+  // quiver on the back
+  const qv=new THREE.Mesh(new THREE.CylinderGeometry(0.05*s,0.05*s,0.3*s,7),M2(0x5a3a1e));
+  qv.position.set(-0.18*s,0.55*s,0.05*s); qv.rotation.x=0.3; g.add(qv);
+  // hp bar
+  const bg=new THREE.Sprite(new THREE.SpriteMaterial({map:WHITETEX,color:0x111820,depthWrite:false}));
+  bg.scale.set(0.6,0.07,1); bg.position.y=0.95;
+  const fg=new THREE.Sprite(new THREE.SpriteMaterial({map:WHITETEX,color:0x9fe08a,depthWrite:false}));
+  fg.scale.set(0.58,0.05,1); fg.position.y=0.95;
+  g.add(bg); g.add(fg); g.userData.hpfg=fg;
+  return g;
+}
+function makeArcheryRange(){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.66,0.36,0.5),M2(0x4f5a38,{roughness:0.85}));
+  body.position.y=0.18; body.castShadow=true; g.add(body);
+  const roof=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.46,0.3,4),M2(0x33402a,{roughness:0.9}));
+  roof.rotation.y=Math.PI/4; roof.position.y=0.5; roof.scale.z=0.7; roof.castShadow=true; g.add(roof);
+  // archery target beside the hut
+  const tg=new THREE.Group();
+  [[0.16,0xd9d2c0],[0.11,0xa03028],[0.06,0xd9d2c0],[0.025,0xa03028]].forEach(([rr,cc],i)=>{
+    const ring=new THREE.Mesh(new THREE.CylinderGeometry(rr,rr,0.03,14),M2(cc));
+    ring.rotation.x=Math.PI/2; ring.position.z=i*0.006; tg.add(ring); });
+  const leg1=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.34,5),M2(0x5a3a1e));
+  leg1.position.set(0,-0.24,0); tg.add(leg1);
+  tg.position.set(0.44,0.4,0.12); tg.rotation.y=-0.6; g.add(tg);
   return g;
 }
 function makeRallyFlag(){
@@ -976,20 +1016,23 @@ function tryBuild(c,r){
     banner('Goldmine errichtet'); vib(15); sfx('place'); updateHUD(); return;
   }
   // --- lumber hut ---
-  if(G.selected==='barracks'){
+  if(G.selected==='barracks'||G.selected==='archery'){
+    const bdef=BUILDINGS[G.selected];
     if(G.grid[i]!==T_GROUND){ banner('Hier kann nicht gebaut werden'); return; }
+    if(G.wave<bdef.unlock){ banner(bdef.name+' ab Welle '+bdef.unlock); return; }
     if(G.gold<cost){ banner('Nicht genug Gold'); return; }
     if(G.wood<wcost){ banner('Nicht genug Holz'); return; }
     G.grid[i]=T_BUILDING; computeFlow();
     G.gold-=cost; G.wood-=wcost;
-    const m=makeBarracks(); m.position.set(tw(c),0,tz(r)); scene.add(m);
-    const b={i,x:tw(c),z:tz(r),hp:BUILDINGS.barracks.hp,maxhp:BUILDINGS.barracks.hp,mesh:m,
-      type:'barracks',rally:{x:tw(c),z:tz(r)+1.2},respawnT:0,flag:null};
+    const m=G.selected==='archery'?makeArcheryRange():makeBarracks();
+    m.position.set(tw(c),0,tz(r)); scene.add(m);
+    const b={i,x:tw(c),z:tz(r),hp:bdef.hp,maxhp:bdef.hp,mesh:m,
+      type:G.selected,rally:{x:tw(c),z:tz(r)+1.2},respawnT:0,flag:null};
     G.buildings.push(b);
     b.flag=makeRallyFlag(); b.flag.position.set(b.rally.x,0,b.rally.z); scene.add(b.flag);
     spawnTroops(b);
-    burst(b.x,0.4,b.z,0x6ab0ff,12,2.5);
-    banner('Kaserne errichtet — Krieger treten an! (Antippen = Sammelpunkt)');
+    burst(b.x,0.4,b.z,bdef.color,12,2.5);
+    banner(bdef.name+' errichtet! (Antippen = Sammelpunkt)');
     vib(15); sfx('place'); updateHUD(); return;
   }
   if(G.selected==='lumber'){
@@ -1182,7 +1225,7 @@ function damageStructure(i,amount){
   if(G.grid[i]===T_TOWER&&G.tower[i]){ obj=G.tower[i]; kind='tower'; name=obj.def.name; }
   else if(G.grid[i]===T_WALL&&G.walls[i]){ obj=G.walls[i]; kind='wall'; name='Palisade'; }
   else if(G.grid[i]===T_BUILDING){ obj=G.buildings.find(b=>b.i===i); kind='hut';
-    name=obj&&obj.type==='barracks'?'Kaserne':'Holzfäller-Hütte'; }
+    name=obj&&BUILDINGS[obj.type]?BUILDINGS[obj.type].name:'Holzfäller-Hütte'; }
   if(!obj)return;
   obj.hp-=amount;
   ensureStructBar(obj.mesh, kind==='tower'?1.15:kind==='hut'?0.95:0.8);
@@ -1201,7 +1244,7 @@ function destroyStructure(i,obj,kind,name){
     G.workers=G.workers.filter(w=>{ if(w.home===obj){ scene.remove(w.mesh); return false; } return true; });
     G.troops=G.troops.filter(t=>{ if(t.home===obj){ scene.remove(t.mesh); return false; } return true; });
     if(obj.flag) scene.remove(obj.flag);
-    if(kind==='hut'&&obj.type==='barracks') name='Kaserne';
+    if(kind==='hut'&&BUILDINGS[obj.type]) name=BUILDINGS[obj.type].name;
   }
   G.grid[i]=T_GROUND;
   computeFlow();
@@ -1210,13 +1253,32 @@ function destroyStructure(i,obj,kind,name){
   banner(name+' zerstört!');
 }
 // ---------- troops (viking defenders) ----------
+function troopKindOf(b){ return b.type==='archery'?'archer':'warrior'; }
+function troopStats(kind){ return kind==='archer'?ARCHER:TROOP; }
+function makeTroop(b){
+  const kind=troopKindOf(b), S=troopStats(kind);
+  const mesh=kind==='archer'?makeArcher():makeWarrior(); scene.add(mesh);
+  mesh.position.set(b.x+(Math.random()-0.5)*0.6,0,b.z+0.5);
+  const t={mesh,home:b,kind,x:mesh.position.x,z:mesh.position.z,
+    hp:S.hp,maxhp:S.hp,target:null,atkT:0,anim:Math.random()*6,dead:false,dying:0,flashT:0};
+  G.troops.push(t); return t;
+}
 function spawnTroops(b){
-  for(let k=G.troops.filter(t=>t.home===b&&!t.dead).length;k<BUILDINGS.barracks.troops;k++){
-    const mesh=makeWarrior(); scene.add(mesh);
-    mesh.position.set(b.x+(Math.random()-0.5)*0.6,0,b.z+0.5);
-    G.troops.push({mesh,home:b,x:mesh.position.x,z:mesh.position.z,
-      hp:TROOP.hp,maxhp:TROOP.hp,target:null,atkT:0,anim:Math.random()*6,dead:false,dying:0,flashT:0});
-  }
+  const want=BUILDINGS[b.type]?.troops||0;
+  for(let k=G.troops.filter(t=>t.home===b&&!t.dead).length;k<want;k++) makeTroop(b);
+}
+// --- arrow tracer pool (archer shots) ---
+const arrows=[];
+function fireArrow(x0,z0,x1,z1){
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array([x0,0.55,z0,x1,0.5,z1]),3));
+  const ln=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xd9e8c8,transparent:true,opacity:0.9}));
+  scene.add(ln); arrows.push({ln,t:0.14});
+}
+function updateArrows(dt){
+  for(let i=arrows.length-1;i>=0;i--){ const a=arrows[i]; a.t-=dt;
+    a.ln.material.opacity=Math.max(0,a.t/0.14)*0.9;
+    if(a.t<=0){ scene.remove(a.ln); a.ln.geometry.dispose(); a.ln.material.dispose(); arrows.splice(i,1); } }
 }
 function updateTroops(dt){
   for(const t of G.troops){
@@ -1227,20 +1289,22 @@ function updateTroops(dt){
       continue; }
     t.anim+=dt*5;
     if(t.flashT>0){ t.flashT-=dt; if(t.flashT<=0) m.userData.body.material.emissive.setHex(0x000000); }
+    const S=troopStats(t.kind), isArcher=t.kind==='archer';
     const rally=t.home.rally||{x:t.home.x,z:t.home.z};
+    const aggro=isArcher?TROOP.aggro+ARCHER.range*0.5:TROOP.aggro;
     // acquire: nearest living enemy near the rally point
     if(!t.target||t.target.dead){
       t.target=null; let bd=Infinity;
       for(const e of G.enemies){ if(e.dead)continue;
         const dr=(e.x-rally.x)*(e.x-rally.x)+(e.z-rally.z)*(e.z-rally.z);
-        if(dr>TROOP.aggro*TROOP.aggro)continue;
+        if(dr>aggro*aggro)continue;
         const dtp=(e.x-t.x)*(e.x-t.x)+(e.z-t.z)*(e.z-t.z);
         if(dtp<bd){bd=dtp;t.target=e;} }
     }
     const walkTo=(x,z,stop)=>{
       const dx=x-t.x,dz=z-t.z,d=Math.hypot(dx,dz);
       if(d<=stop)return true;
-      t.x+=dx/d*TROOP.speed*dt; t.z+=dz/d*TROOP.speed*dt;
+      t.x+=dx/d*S.speed*dt; t.z+=dz/d*S.speed*dt;
       m.rotation.y=-Math.atan2(dz,dx);
       const sw=Math.sin(t.anim)*0.6;
       if(P){P.lLeg.rotation.z=sw;P.rLeg.rotation.z=-sw;P.lArm.rotation.z=-sw*0.4;P.rArm.rotation.z=sw*0.5;}
@@ -1249,15 +1313,24 @@ function updateTroops(dt){
     };
     if(t.target){
       const e=t.target, d=Math.hypot(e.x-t.x,e.z-t.z);
-      if(d>0.55+e.r*0.3){ walkTo(e.x,e.z,0.5+e.r*0.3); }
+      const reach=isArcher?ARCHER.range:0.55+e.r*0.3;
+      if(d>reach){ walkTo(e.x,e.z,reach-0.05); }
       else {
         m.rotation.y=-Math.atan2(e.z-t.z,e.x-t.x);
-        if(P){ P.rArm.rotation.z=-0.4-Math.abs(Math.sin(t.anim*2.2))*1.5;
-          P.lArm.rotation.z=0.5; P.lLeg.rotation.z=0.1; P.rLeg.rotation.z=-0.1; }
+        if(P){
+          if(isArcher){ // draw + loose
+            P.lArm.rotation.z=-1.35; P.rArm.rotation.z=-0.9-Math.max(0,Math.sin(t.anim*2))*0.35;
+            P.lLeg.rotation.z=0.08; P.rLeg.rotation.z=-0.08;
+          } else {
+            P.rArm.rotation.z=-0.4-Math.abs(Math.sin(t.anim*2.2))*1.5;
+            P.lArm.rotation.z=0.5; P.lLeg.rotation.z=0.1; P.rLeg.rotation.z=-0.1;
+          }
+        }
         t.atkT-=dt;
-        if(t.atkT<=0){ t.atkT=TROOP.rate;
-          hurt(e,TROOP.dps);
-          burst(e.x,0.5,e.z,0xc9d2dc,3,1.6);
+        if(t.atkT<=0){ t.atkT=S.rate;
+          hurt(e,S.dps);
+          if(isArcher){ fireArrow(t.x,t.z,e.x,e.z); burst(e.x,0.5,e.z,0x9fe08a,2,1.4); }
+          else burst(e.x,0.5,e.z,0xc9d2dc,3,1.6);
         }
       }
     } else {
@@ -1276,19 +1349,17 @@ function updateTroops(dt){
     if(t.home&&!t.home.destroyed) t.home.respawnT=Math.max(t.home.respawnT||0,TROOP.respawn);
     return false; } return true; });
   for(const b of G.buildings){
-    if(b.type!=='barracks')continue;
+    if(b.type!=='barracks'&&b.type!=='archery')continue;
     const alive=G.troops.filter(t=>t.home===b&&!t.dead).length;
-    if(alive<BUILDINGS.barracks.troops){
+    if(alive<BUILDINGS[b.type].troops){
       b.respawnT=(b.respawnT||TROOP.respawn)-dt;
       if(b.respawnT<=0){ b.respawnT=TROOP.respawn;
-        const mesh=makeWarrior(); scene.add(mesh);
-        mesh.position.set(b.x,0,b.z+0.5);
-        G.troops.push({mesh,home:b,x:b.x,z:b.z+0.5,hp:TROOP.hp,maxhp:TROOP.hp,
-          target:null,atkT:0,anim:Math.random()*6,dead:false,dying:0,flashT:0});
-        burst(b.x,0.4,b.z+0.5,0x6ab0ff,6,1.6);
+        const t=makeTroop(b);
+        burst(t.x,0.4,t.z,BUILDINGS[b.type].color,6,1.6);
       }
     }
   }
+  updateArrows(dt);
 }
 function updateMines(dt){
   const def=BUILDINGS.goldmine;
@@ -1433,7 +1504,7 @@ function updateHUD(){
     cost.classList.toggle('na',!canAfford(k)&&!locked);
   });
 }
-const BUILD_TABS={ def:KEYS, eco:['palisade','lumber','goldmine','barracks'] };
+const BUILD_TABS={ def:KEYS, eco:['palisade','lumber','goldmine','barracks','archery'] };
 let activeTab='def';
 // ---- drag & drop building (no more tap-to-build misclicks) ----
 let drag=null;   // {key, ghost, marker, valid, c, r}
@@ -1452,6 +1523,7 @@ function ghostFor(key){
   if(TOWERS[key]) m=makeTower(key);
   else if(key==='lumber') m=makeHut();
   else if(key==='barracks') m=makeBarracks();
+  else if(key==='archery') m=makeArcheryRange();
   else if(key==='goldmine') m=makeMine();
   else m=makePalisade();
   m.traverse(o=>{ if(o.material){ o.material=o.material.clone(); o.material.transparent=true; o.material.opacity=0.55; o.castShadow=false; } });
@@ -1608,9 +1680,9 @@ function tap(sx,sy){
     return; }
   if(G.grid[i]===T_BUILDING){ const bb=G.buildings.find(b=>b.i===i);
     if(bb){
-      if(bb.type==='barracks'){
-        if(bb.hp<bb.maxhp&&G.wood>=repairCost(bb)){ repairStructure(bb,'Kaserne'); return; }
-        G.rallyFor=bb; banner('Auf die Karte tippen: Sammelpunkt für die Krieger'); return;
+      if(bb.type==='barracks'||bb.type==='archery'){
+        if(bb.hp<bb.maxhp&&G.wood>=repairCost(bb)){ repairStructure(bb,BUILDINGS[bb.type].name); return; }
+        G.rallyFor=bb; banner('Auf die Karte tippen: Sammelpunkt für die '+(bb.type==='archery'?'Bogenschützen':'Krieger')); return;
       }
       if(bb.hp<bb.maxhp) repairStructure(bb,'Holzfäller-Hütte');
       else banner('Holzfäller-Hütte · '+Math.ceil(bb.hp)+'/'+bb.maxhp+' · '+G.workers.filter(w=>w.home===bb).length+' Zwerge');
@@ -1803,11 +1875,11 @@ function resumeRun(){
     const arr=Array.isArray(ent)?ent:[ent,BUILDINGS.lumber.hp];
     const [bi,bhp,btype,rx,rz]=arr; const type=btype||'lumber';
     const c=bi%COLS,r=(bi/COLS)|0;
-    const def=type==='barracks'?BUILDINGS.barracks:BUILDINGS.lumber;
-    const m=type==='barracks'?makeBarracks():makeHut();
+    const def=BUILDINGS[type]||BUILDINGS.lumber;
+    const m=type==='barracks'?makeBarracks():type==='archery'?makeArcheryRange():makeHut();
     m.position.set(tw(c),0,tz(r)); scene.add(m);
     const b={i:bi,x:tw(c),z:tz(r),hp:bhp,maxhp:def.hp,mesh:m,type};
-    if(type==='barracks'){
+    if(type==='barracks'||type==='archery'){
       b.rally={x:rx||b.x,z:rz||b.z+1.2}; b.respawnT=0;
       b.flag=makeRallyFlag(); b.flag.position.set(b.rally.x,0,b.rally.z); scene.add(b.flag);
     }
@@ -1818,7 +1890,7 @@ function resumeRun(){
   G.tech={done:s.tech||[],cur:null,prog:0};
   G.buildTimer=35;
   computeFlow(); buildBoard(); buildRow(); refreshRow(); updateOwnedRunes(); updateWeatherChip();
-  for(const b of G.buildings){ if(b.type==='barracks') spawnTroops(b); else spawnWorkers(b); }
+  for(const b of G.buildings){ if(b.type==='barracks'||b.type==='archery') spawnTroops(b); else spawnWorkers(b); }
   initAudio();
   mini.style.display='block'; drawMinimap();
   G.running=true; cam.tx=tw(G.base.c)-5; cam.tz=0; cam.dist=13; cam.targetDist=13;
