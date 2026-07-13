@@ -34,8 +34,10 @@ const ENEMIES={
   berserker:{name:'Berserker', hp:26, speed:2.1, reward:7,  r:0.36,atk:13},
   troll:    {name:'Troll',     hp:150,speed:0.75,reward:16, r:0.55,atk:30},
   helhound: {name:'Helhound',  hp:16, speed:3.0, reward:5,  r:0.33,atk:6},
+  nachtalb: {name:'Nachtalb',  hp:30, speed:2.35,reward:9,  r:0.34,atk:15,hunter:true},
   jormun:   {name:'Jörmungandr',hp:900,speed:0.9,reward:120,r:0.80,atk:80,boss:true},
 };
+const HUNT_R=5.5; // nachtalb: how far it smells defenders
 const KEYS=Object.keys(TOWERS);
 
 // ---------- difficulty / weather / events / runes ----------
@@ -794,6 +796,22 @@ function makeEnemy(key){
   } else if(key==='helhound'){ // Fenrir wolf: quadruped
     g=makeQuadruped(1.15,{torso:0x9a7fb8,head:0x8a6fa8,snout:0x6a5288,leg:0x7a5f98});
     barY=0.95;
+  } else if(key==='nachtalb'){ // shadow stalker: hunts defenders
+    g=makeHumanoid(0.92,{torso:0x241c36,skin:0x352a4e,leg:0x191228,arm:0x352a4e});
+    const P=g.userData.parts, s=0.92;
+    // tattered hood
+    const hood=new THREE.Mesh(new THREE.ConeGeometry(0.15*s,0.24*s,7),M2(0x1c1530));
+    hood.position.y=0.08*s; P.head.add(hood);
+    for(const z of [-1,1]){ const eye=new THREE.Mesh(new THREE.SphereGeometry(0.032*s,6,6),
+      M2(0xc06aff,{emissive:0xc06aff,emissiveIntensity:2.6}));
+      eye.position.set(0.1*s,0.01,z*0.05*s); P.head.add(eye); }
+    // long claws on both hands
+    for(const a of [P.lArm,P.rArm]) for(let k=-1;k<=1;k++){
+      const claw=new THREE.Mesh(new THREE.ConeGeometry(0.014*s,0.12*s,5),M2(0xb08ad0,{emissive:0x6a3a9a,emissiveIntensity:0.6}));
+      claw.position.set(0.04*s,-a.userData.len-0.05*s,k*0.03*s); claw.rotation.x=Math.PI; a.add(claw);
+    }
+    const gl=glowSprite(0x8a4ad0,1.4,0.28); gl.position.y=0.55; g.add(gl);
+    barY=1.05;
   } else { // jormun — serpent head; body segments trail behind (built in spawnEnemy)
     g=new THREE.Group(); const s=1;
     const head=new THREE.Mesh(new THREE.SphereGeometry(0.5,16,12),M2(0x49b8a8));
@@ -829,6 +847,7 @@ function waveComposition(n){
   if(n>=2)push('berserker',2+n);
   if(n>=3)push('helhound',2+Math.floor(n*1.3));
   if(n>=4)push('troll',Math.floor(n/2));
+  if(n>=6)push('nachtalb',1+Math.floor((n-5)/1.5));
   for(let i=q.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[q[i],q[j]]=[q[j],q[i]];}
   return q;
 }
@@ -960,6 +979,29 @@ function updateEnemies(dt){
       e.mesh.userData.hpfg.scale.x=e.r*2.16*f3;
       if(e.flashT>0){ e.flashT-=dt; if(e.flashT<=0) e.mesh.userData.body.material.emissive.setHex(0x000000); }
       continue;
+    }
+    // hunter (nachtalb): dive at the nearest defender instead of following the road
+    if(e.def.hunter){
+      let prey=null,pd=HUNT_R*HUNT_R;
+      for(const tr of G.troops){ if(tr.dead)continue;
+        const dd=(tr.x-e.x)*(tr.x-e.x)+(tr.z-e.z)*(tr.z-e.z);
+        if(dd<pd){pd=dd;prey=tr;} }
+      if(prey){
+        const ddx=prey.x-e.x,ddz=prey.z-e.z,dd=Math.hypot(ddx,ddz)||1;
+        const nx=e.x+ddx/dd*spd*dt, nz=e.z+ddz/dd*spd*dt;
+        const ncc=clamp(Math.floor(nx+COLS/2),0,COLS-1), nrr=clamp(Math.floor(nz+ROWS/2),0,ROWS-1);
+        if(walk(ncc,nrr)){ // only dash over open ground — no ghosting through walls
+          e.x=nx; e.z=nz;
+          const bob=Math.abs(Math.sin(e.anim))*0.05;
+          e.mesh.position.set(e.x,0.02+bob,e.z);
+          e.mesh.rotation.y=-Math.atan2(ddz,ddx);
+          animateRig(e,'walk');
+          const fh=clamp(e.hp/e.maxhp,0,1);
+          e.mesh.userData.hpfg.scale.x=e.r*2.16*fh;
+          if(e.flashT>0){ e.flashT-=dt; if(e.flashT<=0) e.mesh.userData.body.material.emissive.setHex(0x000000); }
+          continue;
+        }
+      }
     }
     const i=idx(c,r); const dcx=G.flow[i*2],dcz=G.flow[i*2+1];
     // siege: if the chosen path leads through a structure, attack it
@@ -1343,6 +1385,11 @@ function updateTroops(dt){
       continue; }
     t.anim+=dt*5;
     if(t.flashT>0){ t.flashT-=dt; if(t.flashT<=0) m.userData.body.material.emissive.setHex(0x000000); }
+    // between waves the camp rests: wounds knit back together
+    if(!G.waveActive&&t.hp<t.maxhp){
+      t.hp=Math.min(t.maxhp,t.hp+t.maxhp*0.06*dt);
+      if(Math.random()<dt*1.2) burst(t.x,0.7,t.z,0x7de6ab,1,0.7);
+    }
     const S=troopStats(t.kind), isArcher=t.kind==='archer';
     const rally=t.home.rally||{x:t.home.x,z:t.home.z};
     const aggro=isArcher?TROOP.aggro+ARCHER.range*0.5:TROOP.aggro;

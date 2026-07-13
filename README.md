@@ -62,7 +62,9 @@ Dies ist der spielbare **Kern-Loop** — im GDD die Module **01–08**, dort als
 🏹 **Einherjar** (Bogen) · ᛟ **Runestein** (verlangsamt) · ⚡ **Walküre** (schnellfeuer) · 🔨 **Mjölnir** (Flächenschaden) · 🌈 **Bifröst** (Scharfschütze)
 
 ### Gegner
-🧟 Draugr · 🪓 Berserker · 👹 Troll · 🐺 Helhound · 🐉 Jörmungandr (Boss)
+🧟 Draugr · 🪓 Berserker · 👹 Troll · 🐺 Helhound · 🌑 Nachtalb (jagt gezielt deine Truppen, ab Welle 6) · 🐉 Jörmungandr (Boss)
+
+Zwischen den Wellen **regenerieren** deine Truppen (~6 %/s) — Verluste heilen im Lager.
 
 ---
 
