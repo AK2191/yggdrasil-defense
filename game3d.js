@@ -102,12 +102,12 @@ function newGame(){
      weather:WEATHERS.clear,weatherKey:'clear',
      fx:{rateMul:1,rateT:0,espdMul:1,espdT:0,dmgMul:1,dmgT:0},
      eventTimer:0,nextEventAt:13,
-     spawn:{c:0,r:ROWS>>1},base:{c:COLS-1,r:ROWS>>1},selected:'einherjar',inspect:null,
+     spawn:{c:0,r:ROWS>>1},base:{c:COLS-1,r:ROWS>>1},basePlaced:false,selected:'einherjar',inspect:null,
      waveActive:false,spawnQueue:[],spawnTimer:0,running:false,paused:false,speed:1,over:false};
   G.grid.fill(T_GROUND);
   for(let c=0;c<COLS;c++){G.grid[idx(c,0)]=T_BLOCK;G.grid[idx(c,ROWS-1)]=T_BLOCK;}
   for(let r=0;r<ROWS;r++){G.grid[idx(0,r)]=T_BLOCK;G.grid[idx(COLS-1,r)]=T_BLOCK;}
-  G.grid[idx(G.spawn.c,G.spawn.r)]=T_SPAWN; G.grid[idx(G.base.c,G.base.r)]=T_BASE;
+  G.grid[idx(G.spawn.c,G.spawn.r)]=T_SPAWN;   // base tile is set later by placeBase()
   for(const [c,r] of [[6,6],[6,7],[15,15],[15,14],[11,4],[10,17]]) if(G.grid[idx(c,r)]===T_GROUND) G.grid[idx(c,r)]=T_BLOCK;
   scatterResources();
   computeFlow();
@@ -145,6 +145,7 @@ function stepCost(c,r){
 }
 function computeFlow(){
   const D=G.dist; D.fill(-1);
+  if(!G.basePlaced){ G.flow.fill(0); return; }
   const N=[[1,0],[-1,0],[0,1],[0,-1]];
   // Dijkstra from base (bucket queue; costs are small ints)
   const buckets=[]; const push=(d,i)=>{ (buckets[d]=buckets[d]||[]).push(i); };
@@ -402,7 +403,9 @@ function buildBoard(){
   ban.position.set(0,0.42,0.46); baseGroup.add(ban);
   const gl1=glowSprite(0x4ade80,2.2,0.5); gl1.position.y=0.8; baseGroup.add(gl1);
   const pl=new THREE.PointLight(0x4ade80,1.1,5); pl.position.y=1.1; baseGroup.add(pl);
-  baseGroup.position.set(tw(G.base.c),0,tz(G.base.r)); boardGroup.add(baseGroup);
+  baseGroup.position.set(tw(G.base.c),0,tz(G.base.r));
+  baseGroup.visible=!!G.basePlaced;
+  boardGroup.add(baseGroup);
   // spawn rift
   const sg=new THREE.Group();
   spawnRing=new THREE.Mesh(new THREE.TorusGeometry(0.36,0.055,10,28), std(0xff5a52,{emissive:0xff4438,emissiveIntensity:1.6}));
@@ -750,6 +753,7 @@ function woodCost(k){ return (TOWERS[k]||BUILDINGS[k]).wood||0; }
 function canAfford(k){ return G.gold>=towerCost(k)&&G.wood>=woodCost(k); }
 function startWave(early){
   if(G.waveActive||G.over)return;
+  if(!G.basePlaced){ banner('Platziere zuerst dein Langhaus'); return; }
   if(early&&G.buildTimer>3){ const bn=15+G.wave*2; G.gold+=bn; banner('Früh gestartet · +'+bn+' Gold'); }
   G.buildTimer=0;
   G.wave++; G.spawnQueue=waveComposition(G.wave); G.spawnTimer=0; G.waveActive=true;
@@ -943,30 +947,7 @@ function endWave(){
 // ---------- towers ----------
 function tryBuild(c,r){
   const i=idx(c,r);
-  // rally-point placement mode (after tapping a barracks)
-  if(G.rallyFor){
-    const b=G.rallyFor; G.rallyFor=null;
-    b.rally={x:tw(c),z:tz(r)};
-    if(!b.flag){ b.flag=makeRallyFlag(); scene.add(b.flag); }
-    b.flag.position.set(b.rally.x,0,b.rally.z);
-    for(const t of G.troops) if(t.home===b) t.target=null;
-    banner('Sammelpunkt gesetzt'); sfx('place'); vib(10);
-    return;
-  }
-  if(G.grid[i]===T_TOWER&&G.tower[i]){ openSheet(G.tower[i]); return; }
-  if(G.grid[i]===T_WALL&&G.walls[i]){ const w=G.walls[i];
-    if(w.hp<w.maxhp) repairStructure(w,'Palisade');
-    else banner('Palisade · '+Math.ceil(w.hp)+'/'+w.maxhp);
-    return; }
-  if(G.grid[i]===T_BUILDING){ const bb=G.buildings.find(b=>b.i===i);
-    if(bb){
-      if(bb.type==='barracks'){
-        if(bb.hp<bb.maxhp&&G.wood>=repairCost(bb)){ repairStructure(bb,'Kaserne'); return; }
-        G.rallyFor=bb; banner('Auf die Karte tippen: Sammelpunkt für die Krieger'); return;
-      }
-      if(bb.hp<bb.maxhp) repairStructure(bb,'Holzfäller-Hütte');
-      else banner('Holzfäller-Hütte · '+Math.ceil(bb.hp)+'/'+bb.maxhp+' · '+G.workers.filter(w=>w.home===bb).length+' Zwerge');
-      return; } }
+  if(!G.basePlaced){ banner('Platziere zuerst dein Langhaus'); return; }
   closeSheet();
   const cost=towerCost(G.selected), wcost=woodCost(G.selected);
   // --- palisade wall: may fully seal — enemies will besiege it ---
@@ -1441,8 +1422,9 @@ function updateHUD(){
   $('uiLife').textContent=G.lives;
   $('uiWave').textContent=G.wave;
   $('uiScore').textContent=Math.floor(G.score);
-  const wb=$('waveBtn'); wb.disabled=G.waveActive;
-  wb.textContent=G.waveActive?'Welle '+G.wave+' läuft…':'Welle '+(G.wave+1)+' in '+Math.max(0,Math.ceil(G.buildTimer))+'s · Jetzt!';
+  const wb=$('waveBtn'); wb.disabled=G.waveActive||!G.basePlaced;
+  wb.textContent=!G.basePlaced?'Langhaus platzieren…':
+    G.waveActive?'Welle '+G.wave+' läuft…':'Welle '+(G.wave+1)+' in '+Math.max(0,Math.ceil(G.buildTimer))+'s · Jetzt!';
   document.querySelectorAll('.twr').forEach(el=>{
     const k=el.dataset.k, def=TOWERS[k]||BUILDINGS[k], locked=G.wave<(def.unlock||0);
     el.classList.toggle('locked',locked||!canAfford(k));
@@ -1451,21 +1433,89 @@ function updateHUD(){
     cost.classList.toggle('na',!canAfford(k)&&!locked);
   });
 }
-const ALL_KEYS=KEYS.concat(Object.keys(BUILDINGS));
+const BUILD_TABS={ def:KEYS, eco:['palisade','lumber','goldmine','barracks'] };
+let activeTab='def';
+// ---- drag & drop building (no more tap-to-build misclicks) ----
+let drag=null;   // {key, ghost, marker, valid, c, r}
+function validPlace(key,c,r){
+  if(!inB(c,r))return false;
+  if(!G.basePlaced)return false;
+  const def=TOWERS[key]||BUILDINGS[key];
+  if(G.wave<(def.unlock||0))return false;
+  if(!canAfford(key))return false;
+  const t=G.grid[idx(c,r)];
+  if(key==='goldmine') return t===T_VEIN&&G.veins[idx(c,r)]&&!G.veins[idx(c,r)].mine;
+  return t===T_GROUND;
+}
+function ghostFor(key){
+  let m;
+  if(TOWERS[key]) m=makeTower(key);
+  else if(key==='lumber') m=makeHut();
+  else if(key==='barracks') m=makeBarracks();
+  else if(key==='goldmine') m=makeMine();
+  else m=makePalisade();
+  m.traverse(o=>{ if(o.material){ o.material=o.material.clone(); o.material.transparent=true; o.material.opacity=0.55; o.castShadow=false; } });
+  return m;
+}
+function startDrag(key,x,y){
+  if(drag)endDrag(false);
+  const def=TOWERS[key]||BUILDINGS[key];
+  if(G.wave<(def.unlock||0)){ banner(def.name+' ab Welle '+def.unlock); return; }
+  drag={key,ghost:ghostFor(key),marker:null,valid:false,c:-1,r:-1};
+  drag.marker=new THREE.Mesh(new THREE.PlaneGeometry(1,1),
+    new THREE.MeshBasicMaterial({color:0x4ade80,transparent:true,opacity:0.32,side:THREE.DoubleSide,depthWrite:false}));
+  drag.marker.rotation.x=-Math.PI/2; drag.marker.position.y=0.005;
+  scene.add(drag.ghost); scene.add(drag.marker);
+  moveDrag(x,y);
+}
+function moveDrag(x,y){
+  if(!drag)return;
+  const t=screenToTile(x,y);
+  if(!t){ drag.ghost.visible=false; drag.marker.visible=false; drag.valid=false; return; }
+  drag.c=t.c; drag.r=t.r;
+  drag.valid=validPlace(drag.key,t.c,t.r);
+  drag.ghost.visible=true; drag.marker.visible=true;
+  drag.ghost.position.set(tw(t.c),0,tz(t.r));
+  drag.marker.position.set(tw(t.c),0.005,tz(t.r));
+  drag.marker.material.color.setHex(drag.valid?0x4ade80:0xff5a52);
+}
+function endDrag(commit){
+  if(!drag)return;
+  const {key,c,r,valid,ghost,marker}=drag;
+  scene.remove(ghost); scene.remove(marker);
+  drag=null;
+  document.querySelectorAll('.twr').forEach(x=>x.classList.remove('dragging'));
+  if(commit&&valid){ G.selected=key; tryBuild(c,r); }
+  else if(commit&&c>=0){ // dropped on an invalid spot — explain via tryBuild's messages
+    G.selected=key; tryBuild(c,r);
+  }
+}
+window.addEventListener('pointermove',e=>{ if(drag) moveDrag(e.clientX,e.clientY); },{passive:true});
+window.addEventListener('pointerup',e=>{ if(drag) endDrag(true); });
+window.addEventListener('pointercancel',()=>{ if(drag) endDrag(false); });
+
 function buildRow(){
   const row=$('towerRow'); row.innerHTML='';
-  for(const k of ALL_KEYS){ const def=TOWERS[k]||BUILDINGS[k];
-    const el=document.createElement('div'); el.className='twr'+(k===G.selected?' sel':''); el.dataset.k=k;
+  for(const k of BUILD_TABS[activeTab]){ const def=TOWERS[k]||BUILDINGS[k];
+    const el=document.createElement('div'); el.className='twr'; el.dataset.k=k;
     el.innerHTML=`<div class="dot" style="background:#${def.color.toString(16).padStart(6,'0')};color:#${def.color.toString(16).padStart(6,'0')}"></div>
       <div class="nm">${def.name}</div><div class="cost">${costHtml(k)}</div>`;
-    el.addEventListener('click',()=>{ if(G.wave<(def.unlock||0)){banner(def.name+' ab Welle '+def.unlock);return;}
-      G.selected=k; document.querySelectorAll('.twr').forEach(x=>x.classList.toggle('sel',x.dataset.k===k)); closeSheet();
-      if(k==='goldmine')banner('Auf eine Goldader tippen');
-      if(k==='lumber')banner('Nahe an Bäumen platzieren'); });
+    // drag & drop: press the card, pull it onto the map
+    el.addEventListener('pointerdown',ev=>{
+      ev.preventDefault();
+      if(!G.running||G.over)return;
+      el.classList.add('dragging');
+      startDrag(k,ev.clientX,ev.clientY);
+    });
     row.appendChild(el);
   }
   updateHUD();
 }
+document.querySelectorAll('.btab').forEach(b=>b.addEventListener('click',()=>{
+  activeTab=b.dataset.t;
+  document.querySelectorAll('.btab').forEach(x=>x.classList.toggle('sel',x.dataset.t===activeTab));
+  buildRow(); refreshRow();
+}));
 function refreshRow(){
   document.querySelectorAll('.twr').forEach(el=>{ const def=TOWERS[el.dataset.k]||BUILDINGS[el.dataset.k];
     el.querySelector('.nm').textContent=G.wave<(def.unlock||0)?'Welle '+def.unlock:def.name; });
@@ -1515,14 +1565,57 @@ function updateCameraSmooth(dt){
   }
 }
 const ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0), hitP=new THREE.Vector3();
-function tap(sx,sy){
-  if(!G.running||G.over)return;
+function screenToTile(sx,sy){
   ndc.set(sx/innerWidth*2-1,-(sy/innerHeight)*2+1);
   ray.setFromCamera(ndc,camera);
-  if(!ray.ray.intersectPlane(groundPlane,hitP))return;
+  if(!ray.ray.intersectPlane(groundPlane,hitP))return null;
   const c=Math.floor(hitP.x+COLS/2), r=Math.floor(hitP.z+ROWS/2);
-  if(!inB(c,r)){closeSheet();return;}
-  tryBuild(c,r);
+  return inB(c,r)?{c,r}:null;
+}
+function placeBase(c,r){
+  const i=idx(c,r);
+  if(G.grid[i]!==T_GROUND){ banner('Hier kann das Langhaus nicht stehen'); return; }
+  const ds=Math.hypot(c-G.spawn.c,r-G.spawn.r);
+  if(ds<8){ banner('Zu nah am Riss der Feinde!'); return; }
+  G.base={c,r}; G.grid[i]=T_BASE; G.basePlaced=true;
+  computeFlow(); buildBoard();
+  cam.tx=tw(c); cam.tz=tz(r);
+  burst(tw(c),0.6,tz(r),0x4ade80,20,3);
+  banner('Langhaus errichtet — die Uhr läuft!'); sfx('rune'); vib(25);
+  updateHUD(); drawMinimap();
+}
+// tap = inspect / rally / base placement ONLY (building is drag & drop)
+function tap(sx,sy){
+  if(!G.running||G.over)return;
+  const t0=screenToTile(sx,sy);
+  if(!t0){closeSheet();return;}
+  const {c,r}=t0;
+  if(!G.basePlaced){ placeBase(c,r); return; }
+  const i=idx(c,r);
+  if(G.rallyFor){
+    const b=G.rallyFor; G.rallyFor=null;
+    b.rally={x:tw(c),z:tz(r)};
+    if(!b.flag){ b.flag=makeRallyFlag(); scene.add(b.flag); }
+    b.flag.position.set(b.rally.x,0,b.rally.z);
+    for(const t of G.troops) if(t.home===b) t.target=null;
+    banner('Sammelpunkt gesetzt'); sfx('place'); vib(10);
+    return;
+  }
+  if(G.grid[i]===T_TOWER&&G.tower[i]){ openSheet(G.tower[i]); return; }
+  if(G.grid[i]===T_WALL&&G.walls[i]){ const w=G.walls[i];
+    if(w.hp<w.maxhp) repairStructure(w,'Palisade');
+    else banner('Palisade · '+Math.ceil(w.hp)+'/'+w.maxhp);
+    return; }
+  if(G.grid[i]===T_BUILDING){ const bb=G.buildings.find(b=>b.i===i);
+    if(bb){
+      if(bb.type==='barracks'){
+        if(bb.hp<bb.maxhp&&G.wood>=repairCost(bb)){ repairStructure(bb,'Kaserne'); return; }
+        G.rallyFor=bb; banner('Auf die Karte tippen: Sammelpunkt für die Krieger'); return;
+      }
+      if(bb.hp<bb.maxhp) repairStructure(bb,'Holzfäller-Hütte');
+      else banner('Holzfäller-Hütte · '+Math.ceil(bb.hp)+'/'+bb.maxhp+' · '+G.workers.filter(w=>w.home===bb).length+' Zwerge');
+      return; } }
+  closeSheet();
 }
 
 // ============================================================
@@ -1673,7 +1766,7 @@ function serializeRun(){
     veins:Object.keys(G.veins).map(i=>[+i,G.veins[i].mine?1:0]),
     builds:G.buildings.map(b=>[b.i,b.hp,b.type||'lumber',b.rally?+b.rally.x.toFixed(2):0,b.rally?+b.rally.z.toFixed(2):0]),
     walls:Object.keys(G.walls).map(i=>[+i,G.walls[i].hp]),
-    tech:G.tech.done};
+    tech:G.tech.done, base:[G.base.c,G.base.r]};
 }
 function saveRun(){ const s=serializeRun(); if(s)try{localStorage.setItem('ygg3d_save',JSON.stringify(s));}catch(e){} }
 function clearSave(){ try{localStorage.removeItem('ygg3d_save');}catch(e){} }
@@ -1684,10 +1777,13 @@ function updateResumeBtn(){
 }
 function resumeRun(){
   const s=loadSave(); if(!s){startGame();return;}
+  if(!s.grid||s.grid.length!==COLS*ROWS){ clearSave(); startGame(); return; } // old-map save
   selDiff=s.diffKey||'normal';
   clearScene3D();
   newGame();
   G.grid=new Uint8Array(s.grid);
+  if(s.base){ G.base={c:s.base[0],r:s.base[1]}; }
+  G.basePlaced=true;
   for(const tt of s.towers){ const def=TOWERS[tt.key]; if(!def)continue; const i=idx(tt.c,tt.r);
     const mesh=makeTower(tt.key); mesh.position.set(tw(tt.c),0,tz(tt.r)); mesh.scale.setScalar(1+0.07*(tt.level-1)); scene.add(mesh);
     G.tower[i]={key:tt.key,c:tt.c,r:tt.r,x:tw(tt.c),z:tz(tt.r),def,level:tt.level,dmg:tt.dmg,range:tt.range,
@@ -1768,7 +1864,7 @@ function drawMinimap(){
     mctx.fillRect(c*k,r*k,k+0.5,k+0.5);
   }
   // base & spawn
-  mctx.fillStyle='#4ade80'; mctx.beginPath(); mctx.arc((G.base.c+0.5)*k,(G.base.r+0.5)*k,3.2,0,7); mctx.fill();
+  if(G.basePlaced){ mctx.fillStyle='#4ade80'; mctx.beginPath(); mctx.arc((G.base.c+0.5)*k,(G.base.r+0.5)*k,3.2,0,7); mctx.fill(); }
   mctx.fillStyle='#ff5a52'; mctx.beginPath(); mctx.arc((G.spawn.c+0.5)*k,(G.spawn.r+0.5)*k,3.2,0,7); mctx.fill();
   // enemies
   mctx.fillStyle='#ff7a70';
@@ -1815,7 +1911,7 @@ function startGame(){
   mini.style.display='block'; drawMinimap();
   G.running=true;
   $('startScreen').classList.add('hidden'); $('endScreen').classList.add('hidden'); $('runeScreen').classList.add('hidden');
-  banner('Baue Türme · dann Welle starten');
+  banner('Tippe auf die Karte und platziere dein Langhaus');
 }
 $('playBtn').addEventListener('click',startGame);
 $('againBtn').addEventListener('click',startGame);
@@ -1843,7 +1939,7 @@ function loop(now){
       }
     }
     // real-time pacing: next wave auto-starts after the build phase
-    if(!G.waveActive&&!G.awaitingRune){
+    if(!G.waveActive&&!G.awaitingRune&&G.basePlaced){
       G.buildTimer-=dt*G.speed;
       if(G.buildTimer<=0) startWave(false);
     }
@@ -1856,7 +1952,8 @@ function loop(now){
     hudTick+=dt;
     if(hudTick>=0.25){ hudTick=0;
       const wb=$('waveBtn');
-      if(G.waveActive){ wb.disabled=true; wb.textContent='Welle '+G.wave+' läuft…'; }
+      if(!G.basePlaced){ wb.disabled=true; wb.textContent='Langhaus platzieren…'; }
+      else if(G.waveActive){ wb.disabled=true; wb.textContent='Welle '+G.wave+' läuft…'; }
       else { wb.disabled=false; wb.textContent='Welle '+(G.wave+1)+' in '+Math.max(0,Math.ceil(G.buildTimer))+'s · Jetzt!'; }
     }
   }

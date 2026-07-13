@@ -44,6 +44,11 @@
   .twr .nm{font-size:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .twr .cost{font-size:11px;font-weight:800;color:var(--gold);margin-top:2px}
   .twr .cost.na{color:var(--red)}
+  #buildTabs{display:flex;gap:6px;justify-content:center;margin-bottom:7px}
+  .btab{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;
+    padding:7px 16px;font-weight:800;font-size:12px}
+  .btab.sel{color:#eafff0;border-color:var(--acc);background:linear-gradient(180deg,rgba(74,222,128,.18),rgba(74,222,128,.05))}
+  .twr.dragging{opacity:.4}
   #actionRow{display:flex;gap:8px;justify-content:center;margin-top:8px}
   .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;
     padding:11px 18px;font-weight:800;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.3)}
@@ -169,6 +174,10 @@
 </div>
 
 <div id="bottombar">
+  <div id="buildTabs">
+    <button class="btab sel" data-t="def">Türme</button>
+    <button class="btab" data-t="eco">Gebäude</button>
+  </div>
   <div id="towerRow"></div>
   <div id="actionRow">
     <button class="btn" id="pauseBtn">⏸︎</button>
